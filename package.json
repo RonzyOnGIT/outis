@@ -1,0 +1,13 @@
+{
+  "name": "outis",
+  "private": true,
+  "description": "Nobody: hides personal info and writing style before you paste into AI chats. Fully local.",
+  "workspaces": ["backend", "frontend"],
+  "scripts": {
+    "build": "npm run build -w backend && npm run build -w frontend",
+    "dev": "npm run build -w backend && npm run dev -w frontend",
+    "test": "npm test -w backend",
+    "test:ner": "npm run test:ner -w backend",
+    "typecheck": "npm run typecheck -w backend && npm run typecheck -w frontend"
+  }
+}

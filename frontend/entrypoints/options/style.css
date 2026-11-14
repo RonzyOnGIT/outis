@@ -1,0 +1,66 @@
+body { padding: 32px 16px 64px; }
+#app { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.loading { padding: 40px; text-align: center; }
+
+.top { display: flex; gap: 14px; align-items: center; margin-bottom: 6px; }
+.top .logo { width: 48px; height: 48px; border-radius: 12px; }
+.top h1 { font-size: 26px; letter-spacing: -0.01em; }
+.top p { margin: 2px 0 0; }
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px 20px; }
+.card-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+.card-head h2 { font-size: 16px; }
+.card-head p { margin: 2px 0 0; }
+.num { width: 26px; height: 26px; border-radius: 50%; background: var(--info-bg); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
+
+.device { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+.device > div { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.ner .bar { margin-top: 6px; }
+
+.models { display: flex; flex-direction: column; gap: 10px; }
+.model { border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px; cursor: pointer; transition: border-color .12s, background .12s; }
+.model:hover { border-color: var(--accent-2); }
+.model.selected { border-color: var(--accent); background: var(--soft); }
+.model.disabled { opacity: .55; cursor: not-allowed; }
+.model-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.model-top .spacer { flex: 1; }
+.model p { margin: 4px 0 6px 24px; }
+.model-meta { display: flex; gap: 18px; flex-wrap: wrap; margin-left: 24px; align-items: center; }
+.radio { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
+.model.selected .radio { border: 5px solid var(--accent); }
+.dots { display: inline-flex; gap: 3px; vertical-align: middle; margin-left: 4px; }
+.dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.dots i.on { background: var(--accent); }
+.speed { margin: 8px 0 0 24px; font-weight: 600; }
+.actions { display: flex; gap: 8px; margin: 10px 0 0 24px; flex-wrap: wrap; align-items: center; }
+.actions:empty { display: none; }
+.progress { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.grid3 label { display: flex; flex-direction: column; gap: 4px; }
+.lbl { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 12px 0 6px; display: block; }
+.grid3 .lbl { margin: 0; }
+textarea, input:not([type]), select { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 8px 10px; resize: vertical; }
+select { width: auto; max-width: 100%; }
+textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent-2); outline-offset: -1px; }
+.cats, .sites { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.cat { display: inline-flex; gap: 6px; align-items: center; font-size: 13.5px; cursor: pointer; }
+.cat input { accent-color: var(--accent); }
+
+.setting { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.setting p { margin: 2px 0 0; max-width: 460px; }
+.sites { margin: 12px 0 8px; }
+.row input { flex: 1; min-width: 200px; }
+
+.play textarea { font-size: 13px; }
+.out { white-space: pre-wrap; word-break: break-word; background: var(--soft); border-radius: 10px; padding: 10px 12px; min-height: 44px; margin-top: 8px; font-size: 13px; }
+.out:empty { display: none; }
+
+.done { display: flex; gap: 14px; align-items: center; justify-content: flex-end; }
+
+@media (max-width: 560px) {
+  body { padding: 16px 16px 48px; }
+  .model p, .model-meta, .actions, .speed { margin-left: 0; }
+}
