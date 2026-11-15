@@ -21,7 +21,7 @@ import {
   type Settings,
 } from '@/lib/settings';
 import { readField } from './fieldtext';
-import { captureContext, insertText, refocus, selectAll, type InsertionContext } from './insert';
+import { captureContext, insertText, refocus, replaceAll, type InsertionContext } from './insert';
 import { ReviewPanel, toast } from './panel';
 import { PageRestorer } from './restore';
 import { TypingGuard } from './typing';
@@ -100,6 +100,11 @@ export default defineContentScript({
     ): Promise<Outcome> {
       busy = true;
       const panel = new ReviewPanel(ctx.el);
+      // Field mode: if the user goes back to typing, the review is out of date — close it.
+      const onTyping = (e: Event) => {
+        if (opts.mode === 'field' && e.isTrusted && e.target instanceof Node && ctx.el.contains(e.target)) panel.dismiss();
+      };
+      window.addEventListener('input', onTyping, true);
       const slow = setTimeout(() => panel.showLoading('Loading the name detector (first run only)…'), 1200);
       panel.showLoading('Checking for personal info…');
       try {
@@ -137,12 +142,14 @@ export default defineContentScript({
             }
           },
         });
+        window.removeEventListener('input', onTyping, true);
 
         if (result.action === 'clean') {
           // Remember placeholders (per the memory setting) so later messages and answers stay consistent.
           anonymize(text, result.spans, snapshot);
           await saveVault(site, snapshot.toJSON(), settings.memory);
-          await insertText(opts.mode === 'field' ? selectAll(ctx) : ctx, result.text);
+          if (opts.mode === 'field') await replaceAll(ctx, result.text);
+          else await insertText(ctx, result.text);
           return 'replaced';
         }
         if (result.action === 'original') {
@@ -160,9 +167,24 @@ export default defineContentScript({
         refocus(ctx);
         return 'cancelled';
       } finally {
+        window.removeEventListener('input', onTyping, true);
         busy = false;
       }
     }
+
+    // Load the AI rewrite model into memory as soon as the user clicks into a chat box,
+    // so the rewrite is ready (or nearly) by the time they press Enter.
+    let warmedAt = 0;
+    window.addEventListener(
+      'focusin',
+      (e) => {
+        if (!e.isTrusted || !enabledHere() || settings.defaultStyle !== 'ai' || !settings.webllmId) return;
+        if (Date.now() - warmedAt < 5 * 60_000 || !captureContext(e.composedPath()[0] ?? e.target)) return;
+        warmedAt = Date.now();
+        void engine.loadLlm(settings.webllmId).catch(() => {});
+      },
+      true,
+    );
 
     // --- 1. Pasted text. Capture phase on window at document_start: we see the paste before the page. ---
     window.addEventListener(

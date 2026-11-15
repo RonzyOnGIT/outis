@@ -6,6 +6,7 @@ export type EngineRequest =
   | { type: 'analyze'; text: string; options: DetectOptions }
   | { type: 'rewrite'; text: string; modelId: string; requestId?: string }
   | { type: 'llm.prepare'; modelId: string; requestId?: string }
+  | { type: 'llm.load'; modelId: string }
   | { type: 'llm.status' }
   | { type: 'llm.cached'; modelIds: string[] }
   | { type: 'llm.delete'; modelId: string }
@@ -71,6 +72,7 @@ export const engine = {
   rewrite: (text: string, modelId: string, requestId?: string) =>
     callEngine<RewriteResult>({ type: 'rewrite', text, modelId, requestId }),
   initNer: (requestId?: string) => callEngine<boolean>({ type: 'ner.init', requestId }),
+  loadLlm: (modelId: string) => callEngine<null>({ type: 'llm.load', modelId }),
   prepare: (modelId: string, requestId?: string) => callEngine<PrepareResponse>({ type: 'llm.prepare', modelId, requestId }),
   status: () => callEngine<StatusResponse>({ type: 'llm.status' }),
   cached: (modelIds: string[]) => callEngine<Record<string, boolean>>({ type: 'llm.cached', modelIds }),

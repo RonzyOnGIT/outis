@@ -47,6 +47,10 @@ async function handle(req: EngineRequest, tabId?: number): Promise<unknown> {
       touch();
       return engine.llm.speedTest();
     }
+    case 'llm.load':
+      await engine.llm.load(req.modelId);
+      touch();
+      return null;
     case 'llm.status':
       return { nerReady: engine.nerReady, nerError: engine.nerError, loadedModel: engine.llm.modelId };
     case 'llm.cached': {

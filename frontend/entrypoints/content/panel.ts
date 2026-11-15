@@ -50,11 +50,12 @@ const CSS =
 .sub { color: var(--muted); font-size: 12px; }
 .x { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; padding: 4px 6px; border-radius: 6px; }
 .x:hover { background: var(--soft); color: var(--fg); }
-.body { overflow: auto; padding: 4px 14px 2px; }
+.body { overflow: auto; padding: 4px 14px 2px; flex: 1 1 auto; min-height: 0; }
+.controls { flex: none; padding: 0 14px; border-top: 1px solid var(--line); }
 .label { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 4px; font-size: 11px;
   font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 .label .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
-.text { white-space: pre-wrap; word-break: break-word; max-height: 140px; overflow: auto; padding: 8px 10px;
+.text { white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow: auto; padding: 8px 10px;
   border: 1px solid var(--line); border-radius: 9px; font-size: 12.5px; }
 .preview { max-height: 170px; background: var(--soft); }
 mark { border-radius: 4px; padding: 0 2px; cursor: pointer; color: inherit; }
@@ -69,16 +70,19 @@ mark:hover { outline: 1.5px solid currentColor; }
 .chip { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; }
 .chip.who { background: var(--who); color: var(--who-fg); } .chip.where { background: var(--where); color: var(--where-fg); }
 .chip.contact { background: var(--contact); color: var(--contact-fg); } .chip.secret { background: var(--secret); color: var(--secret-fg); }
-.row { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; }
+.row { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; padding: 2px; gap: 2px; }
 .seg button { border: 0; background: transparent; color: var(--muted); padding: 5px 10px; border-radius: 7px; font-size: 12.5px; }
 .seg button.on { background: var(--accent); color: var(--accent-fg); }
 .seg button:disabled { opacity: .45; cursor: not-allowed; }
 .status { font-size: 12px; color: var(--muted); min-height: 18px; margin: 4px 0 2px; display: flex; gap: 6px; align-items: center; }
 .status.warn { color: #b45309; }
+.status.ready { color: var(--accent); font-weight: 600; background: var(--soft); border-radius: 8px; padding: 6px 8px; animation: pop .2s ease-out; }
+.btn.primary.pulse { animation: pulse 1.2s ease-out 2; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(124,58,237,.55); } 100% { box-shadow: 0 0 0 10px rgba(124,58,237,0); } }
 .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.foot { display: flex; gap: 8px; align-items: center; padding: 10px 14px 12px; border-top: 1px solid var(--line); margin-top: 8px; }
+.foot { display: flex; gap: 8px; align-items: center; padding: 8px 14px 12px; flex: none; }
 .btn { border: 1px solid var(--line); background: var(--bg); color: var(--fg); padding: 7px 12px; border-radius: 9px; font-size: 13px; }
 .btn:hover { background: var(--soft); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; margin-left: auto; }
@@ -105,14 +109,24 @@ export class ReviewPanel {
   private rewriting: string | null = null;
   private progressText = '';
   private preview = '';
-  private status: { text: string; warn?: boolean; busy?: boolean } = { text: '' };
+  private status: { text: string; warn?: boolean; busy?: boolean; ready?: boolean } = { text: '' };
+  private rewriteStarted = 0;
+  private ticker: ReturnType<typeof setInterval> | undefined;
 
   constructor(private anchor: HTMLElement) {
     ({ host: this.host, root: this.root } = createShadowHost('nobody-root', CSS));
     this.card = h('div', { class: 'nb', attrs: { role: 'dialog', 'aria-label': 'Nobody privacy check' } });
     this.root.append(this.card);
+    // Keep focus (and the cursor) in the page's text box: clicking the panel must not blur it,
+    // or chat apps re-run their own focus logic and move the cursor. Enter/Esc work via onKey.
+    this.card.addEventListener('mousedown', (e) => e.preventDefault());
     this.position();
     window.addEventListener('keydown', this.keyHandler, true);
+  }
+
+  /** Close as cancelled (e.g. the user went back to typing). */
+  dismiss(): void {
+    if (this.resolve) this.finish({ action: 'cancel' });
   }
 
   showLoading(message: string): void {
@@ -128,6 +142,7 @@ export class ReviewPanel {
   }
 
   close(): void {
+    clearInterval(this.ticker);
     window.removeEventListener('keydown', this.keyHandler, true);
     this.host.remove();
   }
@@ -144,12 +159,19 @@ export class ReviewPanel {
     const width = Math.min(500, innerWidth - 32);
     const left = Math.min(Math.max(16, rect.left + rect.width / 2 - width / 2), innerWidth - width - 16);
     this.card.style.left = `${left}px`;
-    if (rect.top > 380 || rect.top > innerHeight - rect.bottom) {
+    const above = rect.top - 26;
+    const below = innerHeight - rect.bottom - 26;
+    const NEEDED = 460; // enough for both texts, the style row, the status and the buttons
+    if (above >= NEEDED) {
       this.card.style.bottom = `${Math.max(16, innerHeight - rect.top + 10)}px`;
-      this.card.style.maxHeight = `${Math.max(240, rect.top - 26)}px`;
+      this.card.style.maxHeight = `${above}px`;
+    } else if (below >= NEEDED) {
+      this.card.style.top = `${rect.bottom + 10}px`;
+      this.card.style.maxHeight = `${below}px`;
     } else {
-      this.card.style.top = `${Math.min(innerHeight - 260, rect.bottom + 10)}px`;
-      this.card.style.maxHeight = `${Math.max(240, innerHeight - rect.bottom - 26)}px`;
+      // Not enough room next to the box: float over the page (the box is not being edited meanwhile).
+      this.card.style.top = '16px';
+      this.card.style.maxHeight = `${innerHeight - 32}px`;
     }
   }
 
@@ -171,11 +193,14 @@ export class ReviewPanel {
       if (cached) {
         this.preview = cached.text;
         this.status = cached.rewritten
-          ? { text: `✓ Rewritten locally with ${this.init.ai.modelName} in ${(cached.ms / 1000).toFixed(1)} s` }
+          ? { text: `✨ Rewritten text is ready (${this.init.ai.modelName}, ${(cached.ms / 1000).toFixed(1)} s)`, ready: true }
           : { text: 'AI rewrite changed the meaning in places — those parts use Light style instead.', warn: true };
       } else {
+        // Don't make the user wait: show the Light version now, swap in the rewrite when it's ready.
         this.preview = normalizeStyle(anon);
-        this.status = { text: this.progressText || `Rewriting locally with ${this.init.ai.modelName}…`, busy: true };
+        const secs = this.rewriteStarted ? Math.round((Date.now() - this.rewriteStarted) / 1000) : 0;
+        const what = this.progressText || `Rewriting with ${this.init.ai.modelName}`;
+        this.status = { text: `${what} · ${secs}s — you can replace now, or wait for the rewrite`, busy: true };
         if (this.rewriting !== anon) this.startRewrite(anon);
       }
     }
@@ -184,6 +209,9 @@ export class ReviewPanel {
   private startRewrite(anon: string): void {
     this.rewriting = anon;
     this.progressText = '';
+    this.rewriteStarted = Date.now();
+    clearInterval(this.ticker);
+    this.ticker = setInterval(() => this.rewriting === anon && this.resolve && this.render(), 1000);
     this.init
       .rewrite(anon, (text) => {
         if (this.rewriting !== anon) return;
@@ -197,7 +225,10 @@ export class ReviewPanel {
         this.rewriteCache.set(anon, { text: normalizeStyle(anon), rewritten: false, problems: [String(e)], ms: 0 });
       })
       .finally(() => {
-        if (this.rewriting === anon) this.rewriting = null;
+        if (this.rewriting === anon) {
+          this.rewriting = null;
+          clearInterval(this.ticker);
+        }
         if (this.resolve) this.render();
       });
   }
@@ -278,8 +309,8 @@ export class ReviewPanel {
     const primary = h('button', {
       class: 'btn primary',
       on: { click: () => this.pasteClean() },
-    }, busy ? 'Rewriting…' : labels.primary, h('kbd', { text: '↵' }));
-    primary.disabled = busy;
+    }, busy ? `${labels.primary} now` : this.status.ready ? `${labels.primary} (rewritten)` : labels.primary, h('kbd', { text: '↵' }));
+    if (this.status.ready) primary.classList.add('pulse');
 
     this.card.replaceChildren(
       h(
@@ -307,8 +338,13 @@ export class ReviewPanel {
         spans.length ? chips : null,
         h('div', { class: 'label' }, 'What the site will see'),
         prev,
+      ),
+      // Always visible (never scrolled away), so "rewrite is ready" can't be missed.
+      h(
+        'div',
+        { class: 'controls' },
         h('div', { class: 'row' }, h('span', { class: 'sub', text: 'Writing style' }), seg),
-        h('div', { class: `status${this.status.warn ? ' warn' : ''}` }, busy ? h('div', { class: 'spin' }) : null, this.status.text),
+        h('div', { class: `status${this.status.warn ? ' warn' : ''}${this.status.ready ? ' ready' : ''}` }, busy ? h('div', { class: 'spin' }) : null, this.status.text),
       ),
       h(
         'div',
@@ -318,11 +354,9 @@ export class ReviewPanel {
         primary,
       ),
     );
-    if (!busy) queueMicrotask(() => primary.focus({ preventScroll: true }));
   }
 
   private pasteClean(): void {
-    if (this.status.busy) return;
     this.finish({ action: 'clean', text: this.preview, spans: this.activeSpans() });
   }
 

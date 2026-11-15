@@ -114,9 +114,15 @@ export class TypingGuard {
   }
 
   private onClick(e: MouseEvent): void {
-    if (!e.isTrusted || this.deps.isBusy() || !this.deps.enabled() || !this.ctx?.el.isConnected) return;
+    if (!e.isTrusted || !this.deps.enabled() || !this.ctx?.el.isConnected) return;
     const button = (e.composedPath()[0] as Element | undefined)?.closest?.('button, [role="button"], input[type="submit"]') as HTMLElement | null;
     if (!button || !isSendButton(button, this.ctx.el)) return;
+    if (this.deps.isBusy()) {
+      // A review is open — the box still holds the original text, so nothing may be sent now.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
     this.guard(e, () => button.click());
   }
 
@@ -146,6 +152,7 @@ export class TypingGuard {
         resend();
         return;
       }
+      this.hideBadge(); // the review panel takes over
       const outcome = await this.deps.review(ctx, field.text, spans, 'send');
       this.afterReview(outcome, field.text);
     })();
@@ -202,13 +209,21 @@ export class TypingGuard {
     const field = readField(this.ctx);
     const spans = this.last?.text === field.text ? this.last.spans : (await this.analyzeNow())?.spans ?? [];
     if (!spans.length) return;
+    this.hideBadge();
     this.afterReview(await this.deps.review(this.ctx, field.text, spans, 'badge'), field.text);
+  }
+
+  private hideBadge(): void {
+    this.badge?.host.remove();
+    this.badge = null;
   }
 
   private afterReview(outcome: 'replaced' | 'kept' | 'cancelled', text: string): void {
     if (outcome === 'kept') {
       this.approved = text; // this exact text may now be sent
       this.paint([], null);
+    } else if (outcome === 'cancelled' && this.last) {
+      this.paint(this.last.spans, this.ctx ? readField(this.ctx) : null);
     } else if (outcome === 'replaced') {
       this.paint([], null);
       clearTimeout(this.timer);

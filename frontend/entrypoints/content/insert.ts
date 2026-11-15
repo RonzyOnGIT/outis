@@ -17,7 +17,7 @@ function deepActiveElement(): Element | null {
 
 /** Find the editable element an event (or the current focus) belongs to. */
 export function captureContext(target: EventTarget | null = deepActiveElement()): InsertionContext | null {
-  let el = target instanceof Node ? (target instanceof Element ? target : target.parentElement) : null;
+  const el = target instanceof Node ? (target instanceof Element ? target : target.parentElement) : null;
   if (!el) return null;
 
   if (el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && TEXT_INPUT_TYPES.has(el.type))) {
@@ -34,103 +34,102 @@ export function captureContext(target: EventTarget | null = deepActiveElement())
   return null;
 }
 
-export function readAll(ctx: InsertionContext): string {
+/**
+ * Chat apps sometimes re-render their input box. If ours is gone from the page,
+ * find the current one (same id, or whatever editable box has focus now).
+ */
+export function liveContext(ctx: InsertionContext): InsertionContext {
+  if (ctx.el.isConnected) return ctx;
+  const byId = ctx.el.id ? document.getElementById(ctx.el.id) : null;
+  const fresh = (byId && captureContext(byId)) || captureContext();
+  return fresh ?? ctx;
+}
+
+function isFocused(el: HTMLElement): boolean {
+  const a = deepActiveElement();
+  return a === el || (a !== null && el.contains(a));
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+function readText(ctx: InsertionContext): string {
   return ctx.kind === 'input' ? ctx.el.value : (ctx.el.innerText ?? '');
 }
 
-/** Make the context cover the whole field (for "anonymize this box"). */
-export function selectAll(ctx: InsertionContext): InsertionContext {
-  if (ctx.kind === 'input') return { ...ctx, start: 0, end: ctx.el.value.length };
-  const range = document.createRange();
-  range.selectNodeContents(ctx.el);
-  return { ...ctx, range };
+/** Replace the input's value in a way React/Vue-controlled inputs notice. */
+function setInputValue(el: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+  setter ? setter.call(el, value) : (el.value = value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 /**
- * Rich editors (ProseMirror on ChatGPT/Claude, Gmail…) keep their own copy of the selection and
- * only pick up DOM selection changes on the async "selectionchange" event. Wait for it before
- * pasting, or the editor pastes at its old cursor position (e.g. after the original text).
+ * Replace everything in the box with `text`.
+ *
+ * Selection and insertion happen synchronously in one task: rich editors (and chat apps that
+ * move the cursor to the end on focus) get no chance to move the selection in between, so the
+ * text can't end up appended after the original. The editor then reconciles the DOM change
+ * itself. We verify the result and retry, so the original can never be sent along.
  */
-function selectionSettled(): Promise<void> {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      document.removeEventListener('selectionchange', finish);
-      setTimeout(resolve, 0); // let the editor's own selectionchange handler run first
-    };
-    document.addEventListener('selectionchange', finish);
-    setTimeout(finish, 60);
-  });
-}
-
-function selectRange(range: Range | null): Selection | null {
-  const sel = window.getSelection();
-  if (sel && range) {
-    sel.removeAllRanges();
-    sel.addRange(range);
+export async function replaceAll(original: InsertionContext, text: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const ctx = liveContext(original);
+    if (!isFocused(ctx.el)) {
+      ctx.el.focus();
+      await sleep(30); // let the app's own focus handling finish first
+    }
+    if (ctx.kind === 'input') {
+      ctx.el.setSelectionRange(0, ctx.el.value.length);
+      if (!document.execCommand('insertText', false, text)) setInputValue(ctx.el, text);
+    } else {
+      const all = document.createRange();
+      all.selectNodeContents(ctx.el);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(all);
+      document.execCommand('insertText', false, text); // same task as the selection above
+    }
+    await sleep(40);
+    if (squash(readText(liveContext(original))) === squash(text)) return true;
   }
-  return sel;
+  console.warn('[Nobody] could not replace the text box content');
+  return false;
 }
 
-const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
+/** Insert `text` at the caret (used for pastes). */
+export async function insertText(original: InsertionContext, text: string): Promise<void> {
+  const ctx = liveContext(original);
+  const hadFocus = isFocused(ctx.el);
+  if (!hadFocus) ctx.el.focus();
 
-export async function insertText(ctx: InsertionContext, text: string): Promise<void> {
-  ctx.el.focus();
   if (ctx.kind === 'input') {
-    const el = ctx.el;
-    el.setSelectionRange(ctx.start, ctx.end);
+    ctx.el.setSelectionRange(ctx.start, ctx.end);
     // execCommand keeps the native undo stack and fires the input events frameworks listen for.
     if (document.execCommand('insertText', false, text)) return;
-    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-    const next = el.value.slice(0, ctx.start) + text + el.value.slice(ctx.end);
-    setter ? setter.call(el, next) : (el.value = next);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+    setInputValue(ctx.el, ctx.el.value.slice(0, ctx.start) + text + ctx.el.value.slice(ctx.end));
     return;
   }
 
-  const replacingAll = ctx.range !== null && rangeCoversElement(ctx.range, ctx.el);
-  const sel = selectRange(ctx.range);
-  await selectionSettled();
-
+  // If focus never left the editor, its caret is exactly where the user pasted — leave it alone.
+  // Otherwise put the caret back and give the editor a moment to notice before pasting.
+  if (!hadFocus && ctx.range) {
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(ctx.range);
+    await sleep(30);
+  }
   // Rich editors handle paste events best (they keep their own document model in sync).
   const data = new DataTransfer();
   data.setData('text/plain', text);
   const event = new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true });
-  const target = (sel?.anchorNode instanceof Element ? sel.anchorNode : sel?.anchorNode?.parentElement) ?? ctx.el;
-  (ctx.el.contains(target) ? target : ctx.el).dispatchEvent(event);
+  ctx.el.dispatchEvent(event);
   if (!event.defaultPrevented) document.execCommand('insertText', false, text);
-
-  // Safety net for whole-box replacement: if the editor still kept the old text, select
-  // everything again and overwrite it, so the original can never be sent alongside.
-  if (replacingAll) {
-    await new Promise((r) => setTimeout(r, 30));
-    if (squash(ctx.el.innerText ?? '') !== squash(text)) {
-      ctx.el.focus();
-      const all = document.createRange();
-      all.selectNodeContents(ctx.el);
-      selectRange(all);
-      await selectionSettled();
-      document.execCommand('insertText', false, text);
-    }
-  }
 }
 
-function rangeCoversElement(range: Range, el: HTMLElement): boolean {
-  const all = document.createRange();
-  all.selectNodeContents(el);
-  return range.compareBoundaryPoints(Range.START_TO_START, all) <= 0 && range.compareBoundaryPoints(Range.END_TO_END, all) >= 0;
-}
-
-/** Put focus back where the user was (after cancelling the panel). */
-export function refocus(ctx: InsertionContext): void {
-  ctx.el.focus();
-  if (ctx.kind === 'input') ctx.el.setSelectionRange(ctx.start, ctx.end);
-  else if (ctx.range) {
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(ctx.range);
-  }
+/** Make sure the box has focus again (after cancelling the panel). Keeps the editor's own caret. */
+export function refocus(original: InsertionContext): void {
+  const ctx = liveContext(original);
+  if (!isFocused(ctx.el)) ctx.el.focus();
 }
