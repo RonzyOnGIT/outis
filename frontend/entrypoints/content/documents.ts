@@ -132,7 +132,7 @@ export class DocumentGuard {
     this.options.setBusy(true);
     const controller = new AbortController();
     const skipRewrite = new AbortController();
-    const panel = new DocumentPanel(() => controller.abort());
+    const panel = new DocumentPanel(() => controller.abort(), destination.target, files.length);
     this.active = { controller, panel };
     let snapshot: Snapshot | undefined;
     const check = () => {

@@ -46,6 +46,10 @@ Open **ChatGPT, Claude, Gemini, Copilot, Perplexity, DeepSeek or Mistral**.
 
 **Read the answer** → placeholders like `[PERSON_1]` are tinted. **Hover** to see the real name — only you can see it.
 
+**Links** are treated as one piece: a link stays exactly as written, or — when it contains something
+personal (an email, a token, a name such as `linkedin.com/in/jane-doe`) — the whole link becomes `[URL_1]`.
+Links are never half-replaced, and the writing-style step never rewrites them.
+
 **Shortcut:** `Alt + Shift + N` checks the text box you're in.
 **Toolbar icon:** turn Nobody on/off for a site, change the style, forget remembered names.
 
@@ -53,12 +57,16 @@ Open **ChatGPT, Claude, Gemini, Copilot, Perplexity, DeepSeek or Mistral**.
 
 On enabled sites, select, drop or paste a document file. Nobody holds the original, reads it locally,
 replaces detected personal info using the same placeholders as your chat, and applies your selected
-writing style to prose. A private preview always opens, including in automatic mode.
+writing style to prose. A review window always opens just above the message box (including in
+automatic mode): the text of the original file on the left, the cleaned copy on the right. Both
+sides scroll together, replaced values are highlighted, and **↑ / ↓** jump from change to change.
 
-Choose **Attach cleaned copies**, **Download cleaned copies**, or **Cancel**. Attachments become
+Choose **Attach cleaned copy**, **Download cleaned copy**, or **Cancel**. Attachments become
 UTF-8 `.txt` files with generic names, such as `attachment-1.txt`. Originals on disk are unchanged.
-Layout, images, charts, comments, macros and embedded objects are omitted. Tables, CSV, JSON and
-logs keep their structure and are not style-rewritten.
+Layout, images, charts, comments, macros and embedded objects are omitted. Tables — in Word,
+PowerPoint, OpenDocument and spreadsheet files, and tables found in PDFs — become one line per row
+with tab-separated cells, so every value stays under its column heading. Tables, CSV, JSON and logs
+are not style-rewritten.
 
 Supported: **TXT, PDF, DOCX, XLSX, PPTX, ODT, ODS, ODP, RTF, Markdown, CSV, TSV, JSON and LOG**.
 Encrypted/damaged files, legacy DOC/XLS/PPT, images and unsupported files are blocked; PDF pages

@@ -133,6 +133,52 @@ describe('shared local document privacy pipeline', () => {
   });
 });
 
+describe('tables and side-by-side review', () => {
+  const table = [
+    'Name\tEmail\tDate of birth\tLease end\tProfile',
+    'Sarah Connor\tsarah.connor@example.com\t1984-05-12\t2026-11-30\thttps://www.linkedin.com/in/sarah-connor-1984/',
+    'John Smith\tjohn@example.org\t1979-11-02\t2027-01-31\thttps://example.com/docs',
+  ].join('\n');
+  const pdfLike: ExtractedDocument = { format: 'pdf', notes: [], blocks: [
+    { text: 'Page 1', prose: false },
+    { text: 'Tenant records follow. Contact me if anything is wrong, honestly.', prose: true },
+    { text: table, prose: false },
+    { text: 'End of records.', prose: true },
+  ] };
+  const people = { alwaysHide: [{ value: 'Sarah Connor', type: 'PERSON' as const }, { value: 'John Smith', type: 'PERSON' as const }] };
+
+  it('keeps a table row by row and uses its column headings for context', async () => {
+    const out = await sanitizeDocument(pdfLike, new Vault(), { ...people, style: 'light' }, services());
+    expect(out.text).toBe([
+      'Page 1',
+      'Tenant records follow. Contact me if anything is wrong.',
+      'Name\tEmail\tDate of birth\tLease end\tProfile\n' +
+        '[PERSON_1]\t[EMAIL_1]\t[DATE_1]\t2026-11-30\t[URL_1]\n' +
+        '[PERSON_2]\t[EMAIL_2]\t[DATE_2]\t2027-01-31\thttps://example.com/docs',
+      'End of records.',
+    ].join('\n\n'));
+  });
+
+  it('returns each part before and after cleaning, with the replaced values marked', async () => {
+    const out = await sanitizeDocument(pdfLike, new Vault(), { ...people, style: 'light' }, services());
+    expect(out.parts.map((p) => p.cleaned).join('\n\n')).toBe(out.text);
+    expect(out.parts.map((p) => [p.original, p.structured])).toEqual([
+      ['Page 1', true],
+      ['Tenant records follow. Contact me if anything is wrong, honestly.', false],
+      [table, true],
+      ['End of records.', false],
+    ]);
+    const tablePart = out.parts.find((p) => p.original === table)!;
+    expect(tablePart.structured).toBe(true);
+    expect(tablePart.hidden.map(([a, b]) => table.slice(a, b))).toEqual([
+      'Sarah Connor', 'sarah.connor@example.com', '1984-05-12', 'https://www.linkedin.com/in/sarah-connor-1984/',
+      'John Smith', 'john@example.org', '1979-11-02',
+    ]);
+    // Every original block is shown once, in order.
+    expect(out.parts.map((p) => p.original).join('\n\n')).toBe(pdfLike.blocks.map((b) => b.text).join('\n\n'));
+  });
+});
+
 describe('RTF text extraction', () => {
   it('joins formatted runs, decodes escapes and skips private destinations and hidden text', () => {
     const rtf = String.raw`{\rtf1\ansi\ansicpg1252{\info{\author Secret Author}}Email {\b alice}@example.com\par Caf\'e9 \u233? {\v Hidden Name}{\*\custom secret}{\pict 414243}Done}`;

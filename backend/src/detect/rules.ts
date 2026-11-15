@@ -2,6 +2,7 @@ import type { EntityType, Span } from '../types.js';
 import { digitsOnly, ibanValid, luhnValid, shannonEntropy } from './validators.js';
 import { hasIdentifierContext, hasIdentifierField, isSensitiveDate } from './context.js';
 import { dateCandidates } from './dates.js';
+import { findLinks } from './links.js';
 
 /**
  * Pattern recognizers, modelled on Microsoft Presidio's approach:
@@ -63,11 +64,6 @@ const RECOGNIZERS: Recognizer[] = [
 
   // --- Contact details ---
   { name: 'email', type: 'EMAIL', pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/dg },
-  {
-    name: 'url',
-    type: 'URL',
-    pattern: /\b(?:https?:\/\/|www\.)[^\s<>"'`]+[^\s<>"'`.,;:!?)\]}]/dgi,
-  },
 
   // --- Financial ---
   {
@@ -223,7 +219,9 @@ function runRecognizers(text: string, recognizers: Recognizer[]): Span[] {
 /** Run every pattern recognizer over `text`. Overlaps are resolved later by `resolveSpans`. */
 export function detectRules(text: string): Span[] {
   const dates = dateCandidates(text);
-  const first = [...runRecognizers(text, RECOGNIZERS), ...dates.filter((s) => isSensitiveDate(text, s.start, s.end))];
+  // Links (hidden only when the Link category is on, or when they carry something personal).
+  const links: Span[] = findLinks(text).map((l) => ({ ...l, type: 'URL', source: 'rule', score: 1 }));
+  const first = [...runRecognizers(text, RECOGNIZERS), ...links, ...dates.filter((s) => isSensitiveDate(text, s.start, s.end))];
   // A useful calendar date near an account keyword must not come back as a contextual ID.
   const second = runRecognizers(text, CONTEXTUAL).filter((s) => ![...first, ...dates].some((f) => s.start < f.end && f.start < s.end));
   return [...first, ...second];

@@ -6,6 +6,7 @@
  *    can't alter them and the model must copy them back exactly;
  *  - model sentences also pass Nobody's privacy check (no new personal data, no invented names).
  */
+import { findLinks } from '../detect/links.js';
 import { detectRules } from '../detect/rules.js';
 import { createNeutralizer, neutralizeRules, type NeutralizeMode, type NeutralizeResult } from './neutralizer.js';
 import { CODE_LINE } from './protect.js';
@@ -32,16 +33,69 @@ function splitBlocks(text: string): Block[] {
   return blocks;
 }
 
-const MASK_RE = /`[^`\n]+`|(?:https?:\/\/|www\.)\S+[^\s.,;:!?)\]]|[\w.+-]+@[\w-]+\.[\w.-]+|\S*[\p{L}\p{N}_][./\\][\p{L}\p{N}_]\S*/gu;
+const INLINE_CODE = /`[^`\n]+`/g;
+const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+/** File names, paths, versions, dotted names: a letter or digit on both sides of ".", "/" or "\". */
+const DOTTED = /\S*[\p{L}\p{N}_][./\\][\p{L}\p{N}_]\S*/gu;
+const CLOSING: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
 
+/** The part of a whitespace-delimited token that is the name itself, without sentence punctuation. */
+function trimToken(token: string): [number, number] {
+  let start = 0;
+  let end = token.length;
+  while (start < end && '([{<"\'“‘'.includes(token[start]!)) start++;
+  // "p.m." and "U.S." end in their own dot.
+  if (/^(?:\p{L}{1,3}\.){2,}$/u.test(token.slice(start))) return [start, end];
+  for (;;) {
+    const last = token[end - 1];
+    if (end <= start || last === undefined) break;
+    const open = CLOSING[last];
+    const body = token.slice(start, end);
+    if ('.,;:!?"\'”’>'.includes(last) || (open && body.split(last).length > body.split(open).length)) end--;
+    else break;
+  }
+  return [start, end];
+}
+
+/**
+ * Hide everything the style step must copy exactly — inline code, links, emails, file names —
+ * behind [CODE_n]. A link is one element: its words are never rewritten, and punctuation that
+ * follows it belongs to the sentence, not to the link.
+ */
 function mask(text: string): { masked: string; restore: (s: string) => string } {
+  const ranges: Array<[number, number]> = [];
+  const add = (start: number, end: number) => {
+    if (end > start && !ranges.some(([a, b]) => start < b && a < end)) ranges.push([start, end]);
+  };
+  for (const m of text.matchAll(INLINE_CODE)) add(m.index!, m.index! + m[0].length);
+  for (const link of findLinks(text)) add(link.start, link.end);
+  for (const m of text.matchAll(EMAIL)) add(m.index!, m.index! + m[0].length);
+  for (const m of text.matchAll(DOTTED)) {
+    if (/^(?:e\.g\.|i\.e\.|etc\.)[,;:]?$/i.test(m[0])) continue;
+    const [from, to] = trimToken(m[0]);
+    add(m.index! + from, m.index! + to);
+  }
+  ranges.sort((a, b) => a[0] - b[0]);
+
   const kept: string[] = [];
-  const masked = text.replace(MASK_RE, (m) => {
-    if (/^\[[A-Z]+_\d+\]$/.test(m) || /^(?:e\.g\.|i\.e\.|etc\.)$/i.test(m)) return m;
-    kept.push(m);
-    return `[CODE_${kept.length}]`;
-  });
-  return { masked, restore: (s) => s.replace(/\[CODE_(\d+)\]/g, (t, n: string) => kept[Number(n) - 1] ?? t) };
+  let masked = '';
+  let cursor = 0;
+  for (const [start, end] of ranges) {
+    kept.push(text.slice(start, end));
+    masked += text.slice(cursor, start) + `[CODE_${kept.length}]`;
+    cursor = end;
+  }
+  masked += text.slice(cursor);
+  return {
+    masked,
+    // "at 5 p.m." gets a sentence period after the mask: do not write "p.m..".
+    restore: (s) =>
+      s.replace(/\[CODE_(\d+)\](\.?)/g, (t, n: string, dot: string) => {
+        const value = kept[Number(n) - 1];
+        if (value === undefined) return t;
+        return value.endsWith('.') ? value : value + dot;
+      }),
+  };
 }
 
 function eachProse(text: string, fn: (prose: string) => string): string {

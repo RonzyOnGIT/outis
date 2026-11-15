@@ -1,5 +1,6 @@
 import { DEFAULT_POLICY, type DetectOptions, type DictionaryEntry, type EntityType, type Span, type SpanSource } from '../types.js';
 import { isPublicReference, isSensitiveDate, isUsefulQuantity } from './context.js';
+import { findLinks, linkMentions, type Link } from './links.js';
 
 export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -143,10 +144,16 @@ export function resolveSpans(text: string, candidates: Span[], opts: DetectOptio
   const placeholders = [...text.matchAll(/\[[A-Z]+_\d+\]/g)].map((m) => [m.index!, m.index! + m[0].length] as const);
   const insidePlaceholder = (s: Span) => placeholders.some(([a, b]) => s.start < b && a < s.end);
 
+  const links = findLinks(text);
+  const insideLink = (s: Span) => links.some((l) => l.start <= s.start && s.end <= l.end);
+
   const filtered = candidates.filter((s) => {
-    if (!policy[s.type]) return false;
+    if (!policy[s.type] && !s.contains?.some((type) => policy[type])) return false;
     if (s.source === 'ner' && GENERIC_TERMS.test(s.text.trim())) return false;
     if (s.source === 'ner' && s.score < threshold) return false;
+    // Domain and path words look like organisations and places to the name model ("google", "com").
+    // Inside a link only a confident person name counts.
+    if (s.source === 'ner' && insideLink(s) && (s.type !== 'PERSON' || s.score < LINK_NAME_SCORE)) return false;
     if (never.has(s.text.trim().toLowerCase())) return false;
     if (insidePlaceholder(s)) return false;
     if (!sensitiveInContext(text, s)) return false;
@@ -160,5 +167,50 @@ export function resolveSpans(text: string, candidates: Span[], opts: DetectOptio
   const whole = filtered.filter((s) => s.source !== 'dictionary' || !completeIdentifiers.some((r) =>
     r.start <= s.start && r.end >= s.end && r.end - r.start > s.end - s.start));
   const resolved = propagate(text, removeOverlaps(whole));
-  return resolved.filter((s) => !never.has(s.text.trim().toLowerCase()) && !insidePlaceholder(s) && sensitiveInContext(text, s));
+  const hidden = resolved.filter((s) => !never.has(s.text.trim().toLowerCase()) && !insidePlaceholder(s) && sensitiveInContext(text, s));
+  const intact = links.filter((l) => !placeholders.some(([a, b]) => l.start < b && a < l.end));
+  return wholeLinks(text, hidden, intact, { policy, never, alwaysHide: opts.alwaysHide ?? [] });
+}
+
+/** Minimum name-model confidence for a person name found inside a link. */
+const LINK_NAME_SCORE = 0.8;
+const NAMED_TYPES = new Set<EntityType>(['PERSON', 'ORG', 'LOCATION', 'USER']);
+
+/**
+ * A link is one element: it is never left half replaced. A link that holds something personal
+ * (an email, a token, a name, …) or that spells out a name hidden elsewhere in the text is hidden
+ * as a whole; every other link stays exactly as written.
+ */
+function wholeLinks(
+  text: string,
+  spans: Span[],
+  links: Link[],
+  opts: { policy: Record<EntityType, boolean>; never: Set<string>; alwaysHide: DictionaryEntry[] },
+): Span[] {
+  if (!links.length) return spans;
+  // Values hidden in this text, plus the user's own list: a profile link often is the name.
+  const values = new Map<string, EntityType>();
+  for (const s of spans) if (NAMED_TYPES.has(s.type)) values.set(s.text.trim().toLowerCase(), s.type);
+  for (const e of opts.alwaysHide) {
+    const value = e.value.trim().toLowerCase();
+    if (value.length >= 2 && opts.policy[e.type] && !opts.never.has(value)) values.set(value, e.type);
+  }
+
+  let out = spans;
+  for (const link of links) {
+    const inside = out.filter((s) => s.start < link.end && link.start < s.end);
+    if (inside.some((s) => s.start <= link.start && s.end >= link.end)) continue; // already hidden as a whole
+    const keep = opts.never.has(link.text.toLowerCase());
+    const contains = new Set<EntityType>(inside.flatMap((s) => s.contains ?? [s.type]));
+    if (!inside.length && !keep) {
+      for (const [value, type] of values) if (linkMentions(link.text, value, type === 'PERSON')) contains.add(type);
+    }
+    if (!contains.size) continue;
+    out = out.filter((s) => !inside.includes(s));
+    if (keep) continue;
+    const start = Math.min(link.start, ...inside.map((s) => s.start));
+    const end = Math.max(link.end, ...inside.map((s) => s.end));
+    out.push({ start, end, type: 'URL', text: text.slice(start, end), source: 'rule', score: 1, contains: [...contains] });
+  }
+  return out.sort((a, b) => a.start - b.start);
 }

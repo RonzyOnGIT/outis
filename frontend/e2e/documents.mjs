@@ -25,7 +25,7 @@ const xlsx = zip({
   'xl/workbook.xml': `<workbook xmlns:r="${R}"><sheets><sheet name="Contacts" sheetId="1" r:id="r1"/><sheet name="Hidden" state="hidden" r:id="r2"/></sheets></workbook>`,
   'xl/_rels/workbook.xml.rels': `<Relationships xmlns="${REL}"><Relationship Id="r1" Target="worksheets/sheet1.xml"/></Relationships>`,
   'xl/sharedStrings.xml': '<sst><si><r><t>alice@</t></r><r><t>example.com</t></r></si></sst>',
-  'xl/worksheets/sheet1.xml': '<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="C1"><f>1+1</f><v>2</v></c></row><row r="2" hidden="1"><c r="A2" t="inlineStr"><is><t>HIDDEN SECRET</t></is></c></row></sheetData></worksheet>',
+  'xl/worksheets/sheet1.xml': '<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="C1"><f>1+1</f><v>2</v></c></row><row r="2" hidden="1"><c r="A2" t="inlineStr"><is><t>HIDDEN SECRET</t></is></c></row><row r="3"><c r="A3" t="inlineStr"><is><t>Bob</t></is></c><c r="B3" t="inlineStr"><is><t>Row 3</t></is></c></row></sheetData></worksheet>',
 });
 const pptx = zip({
   'ppt/presentation.xml': `<p:presentation xmlns:p="urn:slides" xmlns:r="${R}"><p:sldIdLst><p:sldId id="5" r:id="r2"/><p:sldId id="6" r:id="r1"/></p:sldIdLst></p:presentation>`,
@@ -38,6 +38,24 @@ const odf = (body) => zip({ 'content.xml': `<office:document-content xmlns:offic
 const odt = odf(`<office:text><text:p>Alice<text:s/>Example ${EMAIL}</text:p><office:annotation><text:p>COMMENT SECRET</text:p></office:annotation></office:text>`);
 const ods = odf(`<office:spreadsheet><table:table table:name="Contacts"><table:table-row><table:table-cell><text:p>${EMAIL}</text:p></table:table-cell><table:table-cell table:number-columns-repeated="2"><text:p>2</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet>`);
 const odp = odf(`<office:presentation><draw:page><text:p>${EMAIL}</text:p></draw:page></office:presentation>`);
+const wp = (text) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`;
+const wc = (...paragraphs) => `<w:tc>${paragraphs.join('')}</w:tc>`;
+const docxTable = zip({
+  'word/document.xml': `<w:document xmlns:w="${W}"><w:body>${wp('Before table')}<w:tbl>` +
+    `<w:tr>${wc(wp('Name'))}${wc(wp('Email'))}${wc(wp('Date of birth'))}</w:tr>` +
+    `<w:tr>${wc(wp('Alice'), wp('Example'))}${wc('<w:p><w:r><w:t>alice@</w:t></w:r><w:r><w:t>example.com</w:t></w:r></w:p>')}${wc(wp('1991-03-14'))}</w:tr>` +
+    `<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr>${wp('Merged note')}</w:tc>${wc(wp('2026-11-30'))}</w:tr>` +
+    `</w:tbl>${wp('After table')}</w:body></w:document>`,
+});
+const ac = (text) => `<a:tc><a:txBody><a:p><a:r><a:t>${text}</a:t></a:r></a:p></a:txBody></a:tc>`;
+const pptxTable = zip({
+  'ppt/presentation.xml': `<p:presentation xmlns:p="urn:slides" xmlns:r="${R}"><p:sldIdLst><p:sldId id="5" r:id="r1"/></p:sldIdLst></p:presentation>`,
+  'ppt/_rels/presentation.xml.rels': `<Relationships xmlns="${REL}"><Relationship Id="r1" Target="slides/slide1.xml"/></Relationships>`,
+  'ppt/slides/slide1.xml': `<slide xmlns:a="${A}"><a:p><a:r><a:t>Contacts</a:t></a:r></a:p><a:tbl><a:tr>${ac('Name')}${ac('Email')}</a:tr><a:tr>${ac('Alice Example')}${ac(EMAIL)}</a:tr></a:tbl></slide>`,
+});
+const tc = (text) => `<table:table-cell><text:p>${text}</text:p></table:table-cell>`;
+const odtTable = odf(`<office:text><text:p>Contacts</text:p><table:table><table:table-row>${tc('Name')}${tc('Email')}</table:table-row><table:table-row>${tc('Alice Example')}${tc(EMAIL)}</table:table-row></table:table></office:text>`);
+const PDF_TABLE = ['Tenant list', 'Name\tEmail\tDate of birth\tLease end', `Alice Example\t${EMAIL}\t1991-03-14\t2026-11-30`, 'Bob Stone\tbob@example.org\t1985-07-01\t2027-01-31', 'End of list.'].join('\n');
 
 function pdf(pages) {
   const objects = [null, '<< /Type /Catalog /Pages 2 0 R >>', '', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
@@ -45,7 +63,11 @@ function pdf(pages) {
   for (const text of pages) {
     const pageId = objects.length;
     refs.push(`${pageId} 0 R`);
-    const content = text ? `BT /F1 12 Tf 50 750 Td ${text.split('\n').map((line, i) => `${i ? '0 -16 Td ' : ''}(${line.replace(/[\\()]/g, '\\$&')}) Tj`).join('\n')} ET` : '';
+    const esc = (value) => value.replace(/[\\()]/g, '\\$&');
+    // Lines with tabs are table rows: each cell is drawn separately at its column, as PDF writers do.
+    const content = !text ? '' : text.includes('\t')
+      ? `BT /F1 12 Tf ${text.split('\n').flatMap((line, i) => line.split('\t').map((cell, k) => cell ? `1 0 0 1 ${50 + 140 * k} ${750 - 18 * i} Tm (${esc(cell)}) Tj` : '')).filter(Boolean).join('\n')} ET`
+      : `BT /F1 12 Tf 50 750 Td ${text.split('\n').map((line, i) => `${i ? '0 -16 Td ' : ''}(${esc(line)}) Tj`).join('\n')} ET`;
     objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${pageId + 1} 0 R >>`);
     objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
   }
@@ -124,8 +146,23 @@ try {
     assert.ok(text.includes(EMAIL), `${format} reads intact email`);
     assert.doesNotMatch(text, /(?:METADATA|HIDDEN|COMMENT|IMAGE|NOTES|DELETED) SECRET/);
     if (format === 'pptx') assert.ok(text.indexOf('First slide') < text.indexOf('Second slide'));
-    if (format === 'xlsx') assert.ok(text.includes(`${EMAIL}\t\t2`));
+    if (format === 'xlsx') assert.ok(text.includes(`${EMAIL}\t\t2\nBob\tRow 3`), 'one tab-separated block per sheet');
   }
+  const blocks = async (format, buffer) => (await extract(format, buffer)).data.blocks;
+  assert.deepEqual(await blocks('docx', docxTable), [
+    { text: 'Before table', prose: true },
+    { text: `Name\tEmail\tDate of birth\nAlice Example\t${EMAIL}\t1991-03-14\nMerged note\t\t2026-11-30`, prose: false },
+    { text: 'After table', prose: true },
+  ]);
+  assert.deepEqual(await blocks('pptx', pptxTable), [{ text: 'Slide 1', prose: false }, { text: 'Contacts', prose: true }, { text: `Name\tEmail\nAlice Example\t${EMAIL}`, prose: false }]);
+  assert.deepEqual(await blocks('odt', odtTable), [{ text: 'Contacts', prose: true }, { text: `Name\tEmail\nAlice Example\t${EMAIL}`, prose: false }]);
+  assert.deepEqual(await blocks('pdf', pdf([PDF_TABLE])), [
+    { text: 'Page 1', prose: false },
+    { text: 'Tenant list', prose: true },
+    { text: `Name\tEmail\tDate of birth\tLease end\nAlice Example\t${EMAIL}\t1991-03-14\t2026-11-30\nBob Stone\tbob@example.org\t1985-07-01\t2027-01-31`, prose: false },
+    { text: 'End of list.', prose: true },
+  ]);
+  console.log('PASS: tables in DOCX, PPTX, ODT, XLSX and PDF become tab-separated rows');
   const utf16 = Buffer.concat([Buffer.from([255, 254]), Buffer.from('Résumé', 'utf16le')]);
   assert.equal((await extract('txt', utf16)).data.blocks[0].text, 'Résumé');
   for (const [format, buffer, code] of [
@@ -155,7 +192,10 @@ try {
   const tree = () => cdp.send('DOM.getDocument', { depth: -1, pierce: true });
   function all(node) { return [node, ...(node.children ?? []).flatMap(all), ...(node.shadowRoots ?? []).flatMap(all)]; }
   const nodeText = node => [node.nodeValue ?? '', ...(node.children ?? []).map(nodeText)].join('');
-  async function button(label) { return all((await tree()).root).find(n => n.nodeName === 'BUTTON' && nodeText(n) === label); }
+  const matches = (label, text) => (label instanceof RegExp ? label.test(text) : text === label);
+  async function button(label) { return all((await tree()).root).find(n => n.nodeName === 'BUTTON' && matches(label, nodeText(n))); }
+  const ATTACH = /^Attach cleaned cop(?:y|ies)$/;
+  const DOWNLOAD = /^Download cleaned cop(?:y|ies)$/;
   async function click(label) {
     const node = await button(label); assert.ok(node, `Button: ${label}`);
     await cdp.send('DOM.scrollIntoViewIfNeeded', { nodeId: node.nodeId });
@@ -167,7 +207,7 @@ try {
     while (Date.now() < end) { if (await fn()) return; await page.waitForTimeout(50); }
     throw Error(`Timed out: ${label}`);
   }
-  const ready = () => until(() => button('Attach cleaned copies'), 'document preview');
+  const ready = () => until(() => button(ATTACH), 'document preview');
   async function panelVisible() {
     const node = all((await tree()).root).find(n => n.nodeName === 'SECTION' && n.attributes?.includes('dialog'));
     if (!node) return false;
@@ -190,7 +230,7 @@ try {
   assert.equal(await page.locator('#files').evaluate(el => el.files.length), 0);
   assert.equal(await page.locator('#nobody-documents').evaluate(el => el.shadowRoot), null);
   assert.ok(!await page.locator('body').innerText().then(t => t.includes(EMAIL)));
-  await click('Attach cleaned copies');
+  await click(ATTACH);
   await until(() => uploads.length === 1, 'clean upload');
   const first = uploads[0].files;
   assert.equal(first.length, 2);
@@ -225,22 +265,77 @@ try {
     }, { kind, email: `Deadline: 1991-03-14; ${EMAIL}` });
     await ready();
     const before = uploads.length;
-    await click('Attach cleaned copies'); await until(() => uploads.length > before, kind);
+    await click(ATTACH); await until(() => uploads.length > before, kind);
     assert.equal(uploads.at(-1).kind, kind); assert.equal(uploads.at(-1).files[0].text, 'Deadline: 1991-03-14; [EMAIL_1]');
   }
   await selection('stale.txt', Buffer.from(EMAIL)); await ready();
   await options.evaluate(async () => { const { settings } = await chrome.storage.local.get('settings'); await chrome.storage.local.set({ settings: { ...settings, defaultStyle: 'light' } }); });
-  await page.waitForTimeout(100); await click('Attach cleaned copies');
+  await page.waitForTimeout(100); await click(ATTACH);
   await page.waitForSelector('#nobody-documents', { state: 'detached' }); assert.equal(uploads.length, 3);
 
   await selection('rerender.txt', Buffer.from(EMAIL)); await ready();
   await page.locator('#files').evaluate(el => el.remove());
-  await click('Attach cleaned copies');
-  await until(async () => { const n = await button('Attach cleaned copies'); return n?.attributes?.includes('disabled'); }, 'download fallback');
+  await click(ATTACH);
+  await until(async () => { const n = await button(ATTACH); return n?.attributes?.includes('disabled'); }, 'download fallback');
   const downloaded = page.waitForEvent('download');
-  await click('Download cleaned copies');
+  await click(DOWNLOAD);
   assert.match((await downloaded).suggestedFilename(), /^attachment-\d+\.txt$/);
   assert.equal(uploads.length, 3);
+
+  // Review window: above a message box at the bottom of the page, the original next to the cleaned
+  // copy in one scroller, so both sides scroll together and stay level part by part.
+  async function inPanel(fn) {
+    const node = all((await tree()).root).find(n => n.nodeName === 'SECTION' && n.attributes?.includes('dialog'));
+    assert.ok(node, 'review window');
+    const { object } = await cdp.send('DOM.resolveNode', { nodeId: node.nodeId });
+    const result = await cdp.send('Runtime.callFunctionOn', { objectId: object.objectId, returnByValue: true, functionDeclaration: fn });
+    return result.result.value;
+  }
+  await page.evaluate(() => {
+    const input = document.createElement('input'); input.type = 'file'; input.id = 'files'; document.body.append(input);
+    document.getElementById('text').style.cssText = 'position:fixed;left:40px;bottom:24px;width:640px;height:56px;margin:0';
+  });
+  await page.waitForTimeout(100);
+  const long = Array.from({ length: 160 }, (_, i) => `Line ${i + 1}: write to ${EMAIL} about the lease.`).join('\n\n');
+  await selection('long notes.txt', Buffer.from(long)); await ready();
+  const view = await inPanel(`function () {
+    const root = this.getRootNode(), compare = root.querySelector('.compare');
+    const box = this.getBoundingClientRect(), composer = document.getElementById('text').getBoundingClientRect();
+    const orig = [...root.querySelectorAll('.side.orig')], clean = [...root.querySelectorAll('.side.clean')];
+    const level = () => orig.length === clean.length && orig.every((el, i) => Math.abs(el.getBoundingClientRect().top - clean[i].getBoundingClientRect().top) < 1);
+    const before = [orig.at(-1).getBoundingClientRect().top, clean.at(-1).getBoundingClientRect().top];
+    const levelBefore = level();
+    compare.scrollTop = compare.scrollHeight;
+    const after = [orig.at(-1).getBoundingClientRect().top, clean.at(-1).getBoundingClientRect().top];
+    return { above: box.bottom <= composer.top + 0.5 && box.top >= 0, rows: orig.length, scrollable: compare.scrollHeight > compare.clientHeight * 3,
+      level: levelBefore && level(), together: after[0] < before[0] && Math.abs((before[0] - after[0]) - (before[1] - after[1])) < 1,
+      original: orig[0].textContent, cleaned: clean[0].textContent, headers: [...root.querySelectorAll('.col')].map(el => el.textContent) };
+  }`);
+  assert.equal(view.above, true, 'window sits above the message box');
+  assert.equal(view.rows, 160, 'one row per paragraph');
+  assert.equal(view.scrollable, true, 'long documents scroll inside the window');
+  assert.equal(view.level, true, 'each original paragraph stays level with its cleaned version');
+  assert.equal(view.together, true, 'both sides scroll together');
+  assert.deepEqual(view.headers, ['Original · long notes.txt', `Cleaned · ${view.headers[1].slice('Cleaned · '.length)}`]);
+  assert.ok(view.original.includes(EMAIL) && !view.cleaned.includes(EMAIL) && view.cleaned.includes('[EMAIL_1]'), JSON.stringify(view));
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('#nobody-documents', { state: 'detached' });
+
+  const uploadsBefore = uploads.length;
+  await selection('tenants.pdf', pdf([PDF_TABLE])); await ready();
+  const tables = await inPanel(`function () {
+    const root = this.getRootNode();
+    const cells = (side) => [...root.querySelectorAll('.side.' + side + ' table tr')].map(tr => [...tr.cells].map(td => td.textContent));
+    return { orig: cells('orig'), clean: cells('clean'), dividers: [...root.querySelectorAll('.divider')].map(el => el.textContent) };
+  }`);
+  assert.deepEqual(tables.dividers, ['Page 1']);
+  assert.deepEqual(tables.orig[1], ['Alice Example', EMAIL, '1991-03-14', '2026-11-30']);
+  assert.deepEqual(tables.clean[1], ['[PERSON_1]', '[EMAIL_1]', '[DATE_1]', '2026-11-30']);
+  await click(ATTACH);
+  await until(() => uploads.length > uploadsBefore, 'table PDF upload');
+  assert.match(uploads.at(-1).files[0].text, /\nName\tEmail\tDate of birth\tLease end\n\[PERSON_1\]\t\[EMAIL_1\]\t\[DATE_1\]\t2026-11-30\nBob Stone\t\[EMAIL_\d+\]\t\[DATE_\d+\]\t2027-01-31\n/);
+  await page.evaluate(() => { document.getElementById('files').remove(); document.getElementById('text').style.cssText = ''; });
+  console.log('PASS: review window above the message box, side-by-side original and cleaned text scrolling together, PDF table rows kept and cleaned by column');
 
   // Optional local fixture: exercise a reported PDF without storing its private contents in the repo.
   // JSON: { path: "/local/file.pdf", hidden: ["identifier"], kept: ["useful detail"] }
@@ -259,7 +354,7 @@ try {
     const before = uploads.length;
     await selection('regression.pdf', readFileSync(fixture.path)); await ready();
     assert.equal(uploads.length, before, 'original reported PDF stays held');
-    await click('Attach cleaned copies'); await until(() => uploads.length > before, 'reported PDF clean upload');
+    await click(ATTACH); await until(() => uploads.length > before, 'reported PDF clean upload');
     const normalize = value => value.replace(/\s+/g, ' ').trim();
     const cleaned = normalize(uploads.at(-1).files[0].text);
     for (const value of fixture.hidden) assert.ok(!cleaned.includes(normalize(value)), 'reported identifier must be hidden');

@@ -30,6 +30,11 @@ export interface Span {
   source: SpanSource;
   /** 0..1 confidence. Rules and dictionary matches are 1. */
   score: number;
+  /**
+   * Only on a link hidden as a whole: the kinds of personal information found inside it. Such a
+   * link stays hidden while any of them is enabled, even when the Link category itself is off.
+   */
+  contains?: EntityType[];
 }
 
 /** Per-category switch: hide it or leave it alone. */

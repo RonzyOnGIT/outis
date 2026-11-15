@@ -48,22 +48,88 @@ function excluded(el: Element): boolean {
   return false;
 }
 
-function paragraphs(doc: Document | Element): DocumentBlock[] {
-  return elements(doc, 'p').filter((p) => !excluded(p)).map((p) => {
-    const walk = (el: Element): string => {
-      if (excluded(el) || (el !== p && el.localName === 'p')) return '';
-      if (el.localName === 't') return el.textContent ?? '';
-      if (el.localName === 'tab') return '\t';
-      if (['br', 'cr'].includes(el.localName)) return '\n';
-      return [...el.children].map(walk).join('');
-    };
-    return { text: walk(p), prose: !p.closest('tbl, tc') && !hasAncestor(p, 'tc') };
-  });
+function nearest(el: Element, name: string): Element | null {
+  for (let p = el.parentElement; p; p = p.parentElement) if (p.localName === name) return p;
+  return null;
 }
 
 function hasAncestor(el: Element, name: string): boolean {
-  for (let p = el.parentElement; p; p = p.parentElement) if (p.localName === name) return true;
-  return false;
+  return nearest(el, name) !== null;
+}
+
+function paragraphText(p: Element): string {
+  const walk = (el: Element): string => {
+    if (excluded(el) || (el !== p && el.localName === 'p')) return '';
+    if (el.localName === 't') return el.textContent ?? '';
+    if (el.localName === 'tab') return '\t';
+    if (['br', 'cr'].includes(el.localName)) return '\n';
+    return [...el.children].map(walk).join('');
+  };
+  return walk(p);
+}
+
+const OOXML_TABLE = { table: 'tbl', row: 'tr', cells: ['tc'], paragraphs: ['p'], text: paragraphText };
+const ODF_TABLE = { table: 'table', row: 'table-row', cells: ['table-cell', 'covered-table-cell'], paragraphs: ['p', 'h'], text: odfText };
+// A cell beyond these sizes means the table is page layout (a two-column résumé), not data.
+const TABLE_CELL_PARAGRAPHS = 6;
+const TABLE_CELL_CHARS = 1200;
+const TABLE_COLUMNS = 256;
+
+/**
+ * A data table as one tab-separated line per row, so each value stays in its row and under its
+ * column heading. Merged cells keep their column positions. Returns null for layout tables,
+ * which keep the paragraph-by-paragraph export.
+ */
+function tableText(table: Element, shape: typeof OOXML_TABLE): string | null {
+  if (elements(table, shape.table).length) return null;
+  const count = (el: Element | undefined, name = 'val') => {
+    const n = Number(el ? attr(el, name) || 1 : 1);
+    return Number.isInteger(n) && n >= 1 && n <= TABLE_COLUMNS ? n : 1;
+  };
+  const rows: string[][] = [];
+  for (const row of elements(table, shape.row)) {
+    // WordprocessingML: grid columns left empty before the first cell of this row.
+    const cells: string[] = Array.from({ length: count(elements(row, 'gridBefore')[0]) - 1 }, () => '');
+    for (const cell of elements(row, '*').filter((e) => shape.cells.includes(e.localName))) {
+      const parts = elements(cell, '*')
+        .filter((e) => shape.paragraphs.includes(e.localName) && !excluded(e))
+        .map((e) => shape.text(e).replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+      const text = parts.join(' ');
+      if (parts.length > TABLE_CELL_PARAGRAPHS || text.length > TABLE_CELL_CHARS) return null;
+      // A merged Word cell is stored once (gridSpan); ODF may store a run of equal cells once.
+      const repeat = count(elements(cell, 'gridSpan')[0]) * count(cell, 'number-columns-repeated');
+      if (cells.length + repeat > TABLE_COLUMNS) return null;
+      cells.push(text, ...Array.from({ length: repeat - 1 }, () => (shape === ODF_TABLE ? text : '')));
+    }
+    if (cells.some(Boolean)) rows.push(cells);
+  }
+  const columns = Math.max(0, ...rows.map((r) => r.findLastIndex(Boolean) + 1));
+  if (rows.length < 2 || columns < 2) return null;
+  return rows.map((r) => Array.from({ length: columns }, (_, i) => r[i] ?? '').join('\t')).join('\n');
+}
+
+/** Paragraphs in document order; each data table is exported once, where its first paragraph is. */
+function textBlocks(paragraphs: Element[], shape: typeof OOXML_TABLE): DocumentBlock[] {
+  const tables = new Map<Element, string | null>();
+  const blocks: DocumentBlock[] = [];
+  for (const p of paragraphs) {
+    const table = nearest(p, shape.table);
+    if (table) {
+      if (!tables.has(table)) {
+        const text = tableText(table, shape);
+        tables.set(table, text);
+        if (text) blocks.push({ text, prose: false });
+      }
+      if (tables.get(table)) continue;
+    }
+    if (!excluded(p)) blocks.push({ text: shape.text(p), prose: !table && !shape.cells.some((name) => hasAncestor(p, name)) });
+  }
+  return blocks;
+}
+
+function paragraphs(doc: Document | Element): DocumentBlock[] {
+  return textBlocks(elements(doc, 'p'), OOXML_TABLE);
 }
 
 function relationship(parts: Record<string, Uint8Array>, relFile: string, base: string, id: string): string {
@@ -92,6 +158,8 @@ function extractXlsx(parts: Record<string, Uint8Array>): DocumentBlock[] {
     const path = relationship(parts, 'xl/_rels/workbook.xml.rels', 'xl/', attr(sheet, 'id'));
     const doc = xml(parts[path]);
     blocks.push({ text: `Sheet: ${attr(sheet, 'name')}`, prose: false });
+    // One block per sheet: rows stay together as tab-separated lines, like tables in documents.
+    const rows: string[] = [];
     for (const row of elements(doc, 'row')) {
       if (['1', 'true'].includes(attr(row, 'hidden'))) continue;
       const cells: string[] = [];
@@ -114,8 +182,9 @@ function extractXlsx(parts: Record<string, Uint8Array>): DocumentBlock[] {
         if (elements(cell, 'f').length && !elements(cell, 'v').length) throw new DocumentError('unreadable');
         cells.push(text.includes('\t') || text.includes('\n') || text.includes('"') ? `"${text.replaceAll('"', '""')}"` : text);
       }
-      blocks.push({ text: cells.join('\t'), prose: false });
+      rows.push(cells.join('\t'));
     }
+    if (rows.join('').trim()) blocks.push({ text: rows.join('\n'), prose: false });
   }
   return blocks;
 }
@@ -146,10 +215,12 @@ function extractOdf(parts: Record<string, Uint8Array>, format: DocumentFormat): 
   const doc = xml(parts['content.xml']);
   const body = elements(doc, 'body')[0];
   if (!body) throw new DocumentError('unreadable');
-  if (format !== 'ods') return [...body.getElementsByTagName('*')].filter((e) => ['p', 'h'].includes(e.localName) && !excluded(e) && !hasAncestor(e, 'notes')).map((e) => ({ text: odfText(e), prose: !hasAncestor(e, 'table-cell') }));
+  if (format !== 'ods') return textBlocks([...body.getElementsByTagName('*')].filter((e) => ['p', 'h'].includes(e.localName) && !hasAncestor(e, 'notes')), ODF_TABLE);
   const blocks: DocumentBlock[] = [];
   for (const table of elements(body, 'table')) {
     blocks.push({ text: `Sheet: ${attr(table, 'name')}`, prose: false });
+    const rows: string[] = [];
+    let chars = 0;
     for (const row of elements(table, 'table-row')) {
       if (attr(row, 'visibility') && attr(row, 'visibility') !== 'visible') continue;
       const values: string[] = [];
@@ -165,8 +236,11 @@ function extractOdf(parts: Record<string, Uint8Array>, format: DocumentFormat): 
       if (!line.trim()) continue;
       const repeats = Number(attr(row, 'number-rows-repeated') || 1);
       if (!Number.isInteger(repeats) || repeats < 1 || repeats * line.length > DOCUMENT_LIMITS.textChars) throw new DocumentError('size');
-      blocks.push({ text: Array.from({ length: repeats }, () => line).join('\n'), prose: false });
+      chars += repeats * (line.length + 1);
+      if (chars > DOCUMENT_LIMITS.textChars) throw new DocumentError('size');
+      rows.push(...Array.from({ length: repeats }, () => line));
     }
+    if (rows.length) blocks.push({ text: rows.join('\n'), prose: false });
   }
   return blocks;
 }

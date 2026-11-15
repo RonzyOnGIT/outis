@@ -35,6 +35,17 @@ depend on the name model. Labelled routing values do not need a valid checksum t
 Street-address rules include a single-letter direction and wrapped city/unit details. Remembered
 IDs match whole values rather than prefixes of longer IDs or dates.
 
+Links are one element. The name model reads domain and path words as organisations and places
+(`google`, `com`, `station`), so those guesses are ignored inside a link; only a confident person
+name counts there. A link is either kept exactly as written or replaced as a whole by `[URL_n]`,
+never half-replaced. It is replaced when it contains something personal (an email, a token, an IP,
+a confident person name) or spells out a name or company hidden elsewhere in the text or listed in
+**Always hide** (`linkedin.com/in/jane-doe`, `janedoe.dev`, `example.com/u/Jane%20Doe`). Such a
+link stays hidden even though the **Link** category itself is off; turning off the categories it
+contains releases it. `tel:` and `mailto:` addresses still have only the number or email replaced.
+The style step masks every link (and file name) before rewriting, keeps sentence punctuation
+outside it, and copies it back unchanged.
+
 Remembered values and repeated mentions are rechecked at each occurrence: a hidden DOB does not
 force the same date to disappear from a later deadline, and a private city does not force it to
 disappear from a separate weather question. Explicit **Always hide** entries bypass the context

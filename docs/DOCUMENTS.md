@@ -8,6 +8,12 @@ remembered values. Personal dates are replaced while useful deadlines and invoic
 Version 0.5.1 protects routing labels across PDF line wraps, adds vehicle/lease identifier rules,
 and captures street addresses with single-letter directions and wrapped city/unit details.
 
+Tables and review (after 0.5.1): DOCX, PPTX, ODT and ODP tables, and tables recognised in PDFs, are
+exported as one line per row with tab-separated cells. Empty and merged cells keep their column
+positions, so column headings give detection its context (a *Date of birth* column is hidden, a
+*Lease end* column is kept). Each XLSX/ODS sheet is one tab-separated block. The review window now
+sits above the page's message box and shows the original text next to the cleaned copy.
+
 Version 0.4.1 fixes invisible on-page UI: the shared shadow host has explicit viewport dimensions
 and protected visibility styles, including `content-visibility`. Attachment panels recover if a
 page removes them or closes their popover. Diagnostics include host geometry and file-processing
@@ -21,10 +27,17 @@ stages; old, detached status-bar elements are no longer measured.
    Nobody stops the original event and immediately clears file-input selections.
 3. The offscreen page extracts text. Pattern/dictionary/NER detection and the selected Off, Light
    or AI style run locally. AI output goes through the existing meaning and privacy checks.
-4. A closed-shadow review panel displays the complete cleaned text and extraction/fallback warnings.
-   Document attachments always require review; `autoSend` never approves attachments.
-   While working, it shows extraction/detection/rewrite progress and elapsed time. **Use Light style
-   now** skips pending AI rewriting while keeping personal-info detection and the final review.
+4. A closed-shadow review window opens just above the page's message box (below it when the box is
+   near the top of the page; centred when there is none). While working, it shows extraction,
+   detection and rewrite progress and elapsed time. **Use Light style now** skips pending AI
+   rewriting while keeping personal-info detection and the final review.
+   When ready, it shows the text read from the original file next to the complete cleaned copy, part
+   by part (paragraph by paragraph when the paragraphs line up). Both sides share one scroller, so
+   they always scroll together; the window has a capped height and long documents scroll inside it.
+   Replaced values are highlighted on the left, placeholders on the right; **↑ / ↓** step through
+   the changes and outline both sides. Several files get one tab each. Extraction and fallback
+   warnings are listed under the comparison. Document attachments always require review; `autoSend`
+   never approves attachments. The page cannot read the original text shown in the window.
 5. Attach the reviewed copies or download them. Filenames are generated, MIME is `text/plain`,
    encoding is UTF-8, and `lastModified` is zero. Cancel/Esc releases no original file. No original
    file on disk is modified.
@@ -40,11 +53,11 @@ types and allowlisted error codes; no source filenames, contents or parser excep
 |---|---|---|
 | TXT, MD | Plain text | Strict UTF-8, or UTF-16 LE/BE with BOM. Prose can be rewritten. |
 | CSV, TSV, JSON, LOG | Text, with detected values replaced | No style rewrite. Output is a `.txt` copy; it is not a machine-readable format conversion. |
-| PDF | Text layer, page markers, string form-field values | PDF.js is bundled. Blank/unreadable pages block the whole file, including mixed text/scanned PDFs. No OCR. Multi-column reading order needs review. |
-| DOCX | Paragraphs, table-cell text, headers, footers, footnotes, endnotes | Text runs are joined before detection. Deleted/hidden runs are omitted. |
-| XLSX | Visible sheets and rows, shared/inline strings, cached cell values, sheet names | Tab-separated values, including empty cell positions. No formula evaluation; a formula lacking a cached value blocks the file. Dates may remain Excel serial numbers. |
-| PPTX | Slide text in presentation order | Text in drawing paragraphs/tables. No speaker notes. |
-| ODT, ODP | Text paragraphs and headings | OpenDocument annotations/tracked changes and presentation notes are omitted. |
+| PDF | Text layer, page markers, string form-field values, tables as tab-separated rows | PDF.js is bundled. Blank/unreadable pages block the whole file, including mixed text/scanned PDFs. No OCR. Multi-column reading order needs review. See [PDF tables](#pdf-tables). |
+| DOCX | Paragraphs, tables as tab-separated rows, headers, footers, footnotes, endnotes | Text runs are joined before detection. Deleted/hidden runs are omitted. Layout tables (a cell over 6 paragraphs or 1,200 characters, nested tables) keep paragraph-by-paragraph export. |
+| XLSX | Visible sheets and rows, shared/inline strings, cached cell values, sheet names | One tab-separated block per sheet, including empty cell positions. No formula evaluation; a formula lacking a cached value blocks the file. Dates may remain Excel serial numbers. |
+| PPTX | Slide text in presentation order | Text in drawing paragraphs; tables as tab-separated rows. No speaker notes. |
+| ODT, ODP | Text paragraphs, headings and tables as tab-separated rows | OpenDocument annotations/tracked changes and presentation notes are omitted. |
 | ODS | Sheet names and tab-separated cell values | Repeated rows/cells are bounded. Hidden rows are omitted. Formulas are not evaluated. |
 | RTF | Text, Unicode/ANSI escapes, field results, paragraph/cell breaks | Windows code pages 1250–1258; unsupported encodings fail closed. Destinations containing metadata, objects, pictures and field instructions are omitted. |
 
@@ -53,6 +66,22 @@ macros, author metadata, comments and embedded objects are not copied. Unrecogni
 parts are not interpreted. Any text retained from tables, headers or sheet names still goes through
 detection. Unsupported binary DOC/XLS/PPT, macro-enabled formats, images, archives and other formats
 require export to a supported format first.
+
+## PDF tables
+
+A PDF has no table objects, only text at positions. `lib/documents/pdf-layout.ts` rebuilds rows and
+columns per page in two ways and otherwise keeps the plain reading-order export:
+
+- **Tagged PDFs** (Word, Google Docs, LibreOffice and browser exports with accessibility tags) name
+  their own table rows and cells; those are used directly.
+- **Untagged PDFs**: lines that share column gaps and that the file stores row by row become a table.
+  The lines of a wrapped or vertically centred cell are joined into that cell; a heading merged across
+  columns is placed where it starts. Two-column pages, lists, résumé lines with right-aligned dates,
+  page footers and justified text are left as running text.
+
+Each table is written once, at its place in the text, as tab-separated rows padded to the same number
+of cells. Words split across fonts (bold first letter, superscripts) are no longer separated by a
+space. Check the review window for unusual layouts; the fallback is the previous behaviour.
 
 ## Boundaries
 
@@ -85,8 +114,12 @@ are unpacked. DTD/entity XML is rejected. All new parser resources are packaged 
 ## Implementation and validation
 
 - `content/documents.ts`: interception, atomic batch review, cancellation, delivery and downloads.
-- `content/document-panel.ts`: full text preview in a closed shadow root with keyboard controls.
+- `content/document-panel.ts`: review window in a closed shadow root: progress, side-by-side
+  original/cleaned comparison in one scroller, change navigation, keyboard controls.
+- `content/anchor.ts`: finds the page's message box and places the review window above it.
 - `lib/documents/{extract,pdf,rtf}.ts`: bounded extraction in the offscreen extension page.
+- `lib/documents/pdf-layout.ts`: PDF reading order and table rows/columns (pure; unit-tested with
+  text positions recorded from real PDFs in `frontend/test/fixtures/pdf-pages.ts`).
 - `lib/documents/sanitize.ts`: shared engine/vault orchestration and bounded model calls.
 - `lib/messages.ts`, `offscreen/main.ts`: typed JSON/base64 extraction requests and safe error codes.
 - `wxt.config.ts`: bundled PDF worker, CMaps and standard fonts. See the upstream
@@ -106,14 +139,17 @@ npx playwright install chromium
 npm run test:documents
 ```
 
-Unit tests cover the shared privacy pipeline, limits, chunk boundaries, cancellation and RTF.
+Unit tests cover the shared privacy pipeline, limits, chunk boundaries, cancellation, RTF, PDF table
+and reading-order reconstruction, table column context and the before/after parts behind the review.
 The browser suite loads the production extension into a fresh Chromium profile. It exercises all
 14 supported formats, text encoding, metadata omission, slide order, corrupt inputs, a PDF with an
 unreadable page, archive limits, input-event interception before page handlers, batches, shared
 placeholders, cancellation without vault changes, drop/file-paste replay, settings invalidation,
 download fallback, closed-shadow isolation and content-free diagnostics. It also applies conflicting
 popover CSS, checks actual visibility, removes/re-mounts the review, and clicks controls with the
-mouse rather than invoking click handlers directly. Unit tests exercise hung-model recovery,
+mouse rather than invoking click handlers directly. It checks DOCX/PPTX/ODT/XLSX/PDF table output,
+that the review window sits above a bottom message box, that original and cleaned rows stay level
+while scrolling one shared scroller, and that a PDF table is cleaned column by column. Unit tests exercise hung-model recovery,
 cancellation and the Light-style escape. Model downloads are
 deliberately blocked in this suite so fallback behavior is exercised without large downloads.
 

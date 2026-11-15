@@ -9,7 +9,20 @@ export interface DocumentServices {
   phase?: (phase: 'detect' | 'rewrite', part?: number, total?: number) => void;
 }
 
-export interface CleanDocument { text: string; notes: string[]; findings: number; }
+/** One part of a document before and after cleaning, for side-by-side review. */
+export interface DocumentPart {
+  /** Text extracted from the original file. */
+  original: string;
+  /** The same part in the cleaned copy. */
+  cleaned: string;
+  /** Tables, sheets and other structured data: never rewritten for style. */
+  structured: boolean;
+  /** Ranges of `original` that were replaced by placeholders. */
+  hidden: Array<[number, number]>;
+}
+
+/** `text` is the cleaned copy: its parts joined by blank lines. */
+export interface CleanDocument { text: string; notes: string[]; findings: number; parts: DocumentPart[]; }
 
 /** Bound each model call, prefer paragraph/line boundaries, and never split a token. */
 export function documentChunks(block: DocumentBlock, limit = 4000): DocumentBlock[] {
@@ -78,7 +91,7 @@ export async function sanitizeDocument(
     offset += block.text.length + 2;
   }
   offset = 0;
-  const output: string[] = [];
+  const parts: DocumentPart[] = [];
   for (const block of blocks) {
     const end = offset + block.text.length;
     // Replace against the complete text before selecting blocks: a detected value can span a boundary.
@@ -102,12 +115,12 @@ export async function sanitizeDocument(
       }
       safe = rewritten.join('\n');
     }
-    output.push(safe);
+    parts.push({ original: block.text, cleaned: safe, structured: !block.prose, hidden: local.map((s) => [s.start, s.end]) });
     offset = end + 2;
     services.progress(chunks.length * (1 + end / Math.max(1, text.length)), chunks.length * 2);
   }
   if (partial) notes.add('Some text uses Light style because the AI rewrite was unavailable or did not pass its meaning checks.');
   if (document.blocks.some((b) => !b.prose) && options.style !== 'off') notes.add('Structured data and table cells keep their writing style; personal info is still replaced.');
   services.progress(1, 1);
-  return { text: output.join('\n\n'), notes: [...notes], findings: spans.length };
+  return { text: parts.map((p) => p.cleaned).join('\n\n'), notes: [...notes], findings: spans.length, parts };
 }

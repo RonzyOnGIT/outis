@@ -1,6 +1,7 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { DOCUMENT_LIMITS, DocumentError, type DocumentBlock } from './types';
+import { layoutPage, pageItems, taggedCells, type PdfContentItem, type PdfStructNode } from './pdf-layout';
 
 // Packaged extension resource, never a CDN or a worker created by the visited website.
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -27,26 +28,25 @@ export async function extractPdf(data: Uint8Array): Promise<DocumentBlock[]> {
     let length = 0;
     for (let n = 1; n <= doc.numPages; n++) {
       const page = await doc.getPage(n);
-      const content = await page.getTextContent();
-      let text = '';
-      for (const item of content.items) {
-        if (!('str' in item)) continue;
-        if (text && !/\s$/.test(text) && item.str && !/^\s/.test(item.str)) text += ' ';
-        text += item.str;
-        if (item.hasEOL) text += '\n';
-      }
+      // Marked content and the structure tree let a tagged PDF name its own table cells.
+      const content = await page.getTextContent({ includeMarkedContent: true });
+      const tree = await page.getStructTree().catch(() => null);
+      const viewport = page.getViewport({ scale: 1 }).transform;
+      const pageBlocks = layoutPage(pageItems(content.items as PdfContentItem[], viewport, taggedCells(tree as PdfStructNode | null)));
       // Include visible form values; annotation authors, comments and link targets are omitted.
+      const fields: string[] = [];
       for (const a of await page.getAnnotations({ intent: 'display' })) {
         if (a.subtype === 'Widget' && a.fieldValue != null) {
           const values = Array.isArray(a.fieldValue) ? a.fieldValue : [a.fieldValue];
-          text += '\n' + values.filter((v: unknown) => typeof v === 'string').join('\n');
+          fields.push(...values.filter((v: unknown): v is string => typeof v === 'string'));
         }
       }
+      if (fields.join('').trim()) pageBlocks.push({ text: fields.join('\n'), prose: true });
       // Reject the whole file when a page cannot be read, including mixed scanned/text PDFs.
-      if (!text.trim()) throw new DocumentError('empty');
-      length += text.length;
+      if (!pageBlocks.length) throw new DocumentError('empty');
+      length += pageBlocks.reduce((n, b) => n + b.text.length + 2, 0);
       if (length > DOCUMENT_LIMITS.textChars) throw new DocumentError('size');
-      blocks.push({ text: `Page ${n}`, prose: false }, { text: text.trim(), prose: true });
+      blocks.push({ text: `Page ${n}`, prose: false }, ...pageBlocks);
       page.cleanup();
     }
     return blocks;
