@@ -1,4 +1,0 @@
-problems:
-	- Models use too much space
-	- Users have to install said models
-
