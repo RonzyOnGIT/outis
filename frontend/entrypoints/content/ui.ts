@@ -32,6 +32,14 @@ export function createShadowHost(id: string, css: string): { host: HTMLElement; 
   style.textContent = css;
   root.append(style);
   document.documentElement.append(host);
+  // Put it in the browser's top layer (Popover API): drawn above everything on the page, whatever
+  // the site's own z-index, overflow or modal dialogs do. Falls back to a max z-index.
+  try {
+    host.setAttribute('popover', 'manual');
+    host.showPopover();
+  } catch {
+    host.removeAttribute('popover');
+  }
   return { host, root };
 }
 

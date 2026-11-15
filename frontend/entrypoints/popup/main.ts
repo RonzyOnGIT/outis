@@ -2,6 +2,7 @@ import '@/lib/page.css';
 import './style.css';
 import { getRewriteModel, Vault } from '@nobody/engine';
 import { h } from '@/lib/dom';
+import { clearDiag, readDiag } from '@/lib/diag';
 import { clearVault, isSiteEnabled, loadSettings, loadVault, saveSettings, type Settings, type StyleMode } from '@/lib/settings';
 
 const MEMORY_NOTE: Record<Settings['memory'], string> = {
@@ -98,6 +99,25 @@ async function render() {
       : '',
     h('button', { class: 'btn primary wide', text: 'Settings & playground', on: { click: () => void browser.runtime.openOptionsPage() } }),
     h('p', { class: 'muted small tip', text: 'Tip: press Alt+Shift+N in any text box to anonymize what you typed.' }),
+    h(
+      'div',
+      { class: 'diag' },
+      h('span', { class: 'muted small', text: `Build ${__NOBODY_BUILD__}` }),
+      h('button', {
+        class: 'btn sm',
+        text: 'Copy diagnostics',
+        title: 'Steps, editor type and text lengths only — never your text',
+        on: {
+          click: async (e) => {
+            const entries = await readDiag();
+            const lines = [`Nobody build ${__NOBODY_BUILD__} · ${navigator.userAgent}`, ...entries.map((d) => JSON.stringify(d))];
+            await navigator.clipboard.writeText(lines.join('\n'));
+            (e.target as HTMLButtonElement).textContent = `Copied ${entries.length} lines ✓`;
+          },
+        },
+      }),
+      h('button', { class: 'btn sm', text: 'Clear', on: { click: async (e) => { await clearDiag(); (e.target as HTMLButtonElement).textContent = 'Cleared'; } } }),
+    ),
   );
 }
 

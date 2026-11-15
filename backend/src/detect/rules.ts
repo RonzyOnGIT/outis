@@ -26,6 +26,9 @@ function hasContext(text: string, start: number, words: RegExp): boolean {
 
 const PHONE_CONTEXT = /(phone|tel|call|mobile|cell|whats\s?app|signal|telegram|fax|contact|text me|reach me|номер|телефон)\W*$/i;
 
+const MONTHS =
+  'January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec';
+
 const STREET_SUFFIX =
   '(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Way|Place|Pl|Terrace|Ter|Parkway|Pkwy|Circle|Cir|Highway|Hwy|Square|Sq|Trail|Trl)';
 
@@ -104,6 +107,29 @@ const RECOGNIZERS: Recognizer[] = [
     pattern:
       /\b(?:dob|d\.o\.b\.|date of birth|born(?: on)?|birthday(?: is)?)\s*[:-]?\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}-\d{2}-\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(?:st|nd|rd|th)?,? \d{4}|\d{1,2}(?:st|nd|rd|th)? (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]* \d{4})/dgi,
     group: 1,
+  },
+
+  // --- Any explicit calendar date (they pin down events: "MRI on September 22") ---
+  {
+    name: 'calendar-date',
+    type: 'DATE',
+    pattern: new RegExp(
+      String.raw`\b(?:` +
+        // September 22, Sept. 22nd 2025, Nov 30
+        String.raw`(?:${MONTHS})\.? \d{1,2}(?:st|nd|rd|th)?(?:,? \d{4})?` +
+        // 22 September 2025, 30th of November
+        String.raw`|\d{1,2}(?:st|nd|rd|th)?(?: of)? (?:${MONTHS})(?:,? \d{4})?` +
+        // 03/14/1991, 14.03.1991, 2025-09-22
+        String.raw`|\d{1,2}[/.]\d{1,2}[/.](?:\d{4}|\d{2})|\d{4}-\d{2}-\d{2}` +
+        String.raw`)(?![\w/.-]\d)`,
+      'dgi',
+    ),
+    validate: (v) => {
+      const m = /^(\d{1,2})[/.](\d{1,2})[/.]/.exec(v);
+      if (!m) return true;
+      const [a, b] = [Number(m[1]), Number(m[2])];
+      return a >= 1 && b >= 1 && (a <= 12 || b <= 12) && a <= 31 && b <= 31; // looks like a real day/month
+    },
   },
 
   // --- Network ---

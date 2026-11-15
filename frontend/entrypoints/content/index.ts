@@ -24,6 +24,7 @@ import { readField } from './fieldtext';
 import { captureContext, insertText, refocus, replaceAll, type InsertionContext } from './insert';
 import { ReviewPanel, toast, type PanelState } from './panel';
 import { progressFrom, TopBar } from './topbar';
+import { describeEditor, diag } from '@/lib/diag';
 import { PageRestorer } from './restore';
 import { TypingGuard } from './typing';
 
@@ -40,6 +41,7 @@ export default defineContentScript({
     // nothing at all, so the two never both react to the same paste or Enter.
     const instance = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     document.documentElement.setAttribute('data-nobody-instance', instance);
+    diag('script-start', { build: __NOBODY_BUILD__, instance, readyState: document.readyState });
     let retired = false;
     const alive = (): boolean => {
       if (retired) return false;
@@ -52,6 +54,7 @@ export default defineContentScript({
       const newest = document.documentElement.getAttribute('data-nobody-instance') === instance;
       if (!connected || !newest) {
         retired = true;
+        if (connected) diag('script-retired', { instance, reason: 'newer copy took over' });
         try {
           restorer.setMode('off');
           typing.reset();
@@ -163,6 +166,7 @@ export default defineContentScript({
       };
       window.addEventListener('input', onTyping, true);
       bar.show('loading', 'Checking your message…', 'Looking for personal info on this device');
+      diag('review-start', { mode: opts.mode, chars: text.length, editor: describeEditor(ctx.el), kind: ctx.kind, aiDefault: settings.defaultStyle });
       const slow = setTimeout(() => panel.showLoading('Loading the name detector (first run only)…'), 1200);
       panel.showLoading('Checking for personal info…');
       try {
@@ -206,6 +210,7 @@ export default defineContentScript({
         });
         window.removeEventListener('input', onTyping, true);
 
+        diag('review-result', { action: result.action, chars: result.action === 'clean' ? result.text.length : null });
         if (result.action === 'clean') {
           // Remember placeholders (per the memory setting) so later messages and answers stay consistent.
           anonymize(text, result.spans, snapshot);

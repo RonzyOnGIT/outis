@@ -36,6 +36,8 @@ export default defineConfig({
     },
   },
   vite: () => ({
+    // Build timestamp — shown in the popup and diagnostics to tell which version a tab is running.
+    define: { __NOBODY_BUILD__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')) },
     resolve: { alias: [{ find: /^virtual-ort-wasm(?=\?|$)/, replacement: ortWasmPath() }] },
     build: { target: 'es2022', chunkSizeWarningLimit: 8000 },
     worker: { format: 'es' },

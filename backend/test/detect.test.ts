@@ -62,10 +62,16 @@ describe('pattern rules', () => {
     expect(got).toContain('DATE:03/14/1988');
   });
 
-  it('does not flag ordinary numbers, versions, dates or times', () => {
-    const t = 'Upgraded to v2.14.3 on 2024-05-01 at 10:30, took 1500 ms, version 1.2.3.4 of 3 builds; order of 12 items.';
+  it('does not flag ordinary numbers, versions or times', () => {
+    const t = 'Upgraded to v2.14.3 at 10:30, took 1500 ms, version 1.2.3.4 of 3 builds; order of 12 items, 3.5 stars, May I ask?';
     const got = detectRules(t).filter((s) => s.type !== 'IP');
     expect(got).toEqual([]);
+  });
+
+  it('hides explicit calendar dates but not weekdays or relative dates', () => {
+    const t = 'MRI on September 22 at noon, deadline Nov 30, 2026; born 03/14/1991; invoice 2025-09-22; on the 5th of March. See you Friday or tomorrow.';
+    const got = types(resolveSpans(t, detectRules(t))).filter((x) => x.startsWith('DATE'));
+    expect(got).toEqual(['DATE:September 22', 'DATE:Nov 30, 2026', 'DATE:03/14/1991', 'DATE:2025-09-22', 'DATE:5th of March']);
   });
 
   it('accepts short phone numbers only with context', () => {

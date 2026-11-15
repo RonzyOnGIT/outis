@@ -2,6 +2,7 @@ import type { Span } from '@nobody/engine';
 import { readField, type FieldText } from './fieldtext';
 import { captureContext, type InsertionContext } from './insert';
 import { BASE_CSS, createShadowHost, h } from './ui';
+import { describeEditor, diag } from '@/lib/diag';
 
 /**
  * Watches what you type (like a spell checker, fully on-device):
@@ -145,6 +146,7 @@ export class TypingGuard {
 
     e.preventDefault();
     e.stopImmediatePropagation();
+    diag('send-held', { trigger: e.type, known: known !== null, items: known?.length ?? null, chars: field.text.length, editor: describeEditor(ctx.el) });
 
     void (async () => {
       let spans = known;

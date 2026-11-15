@@ -1,3 +1,5 @@
+import { describeEditor, diag } from '@/lib/diag';
+
 /**
  * Putting text into whatever editor the page uses: plain <textarea>/<input>,
  * or rich contenteditable editors (ProseMirror on ChatGPT/Claude, Gmail compose, …).
@@ -137,16 +139,27 @@ export async function replaceAll(original: InsertionContext, text: string): Prom
       await run(ctx.el);
     }
     await sleep(60);
-    const now = readText(liveContext(original));
-    if (squash(now) === squash(text)) {
-      if (attempt > 0) console.info(`[Nobody] text replaced using "${name}" (attempt ${attempt + 1})`);
-      return true;
+    let now = readText(liveContext(original));
+    let ok = squash(now) === squash(text);
+    if (ok) {
+      // Some apps re-render the box from their own saved draft a moment later — check again.
+      await sleep(400);
+      now = readText(liveContext(original));
+      ok = squash(now) === squash(text);
+      if (!ok) diag('replace-reverted', { method: name, boxChars: now.length, expectedChars: text.length });
     }
-    console.warn(`[Nobody] replace attempt "${name}" did not work: box has ${now.length} chars, expected ${text.length}`, {
-      editor: ctx.el.className, id: ctx.el.id, startsLike: squash(now).slice(0, 40),
+    diag(ok ? 'replace-ok' : 'replace-failed', {
+      method: name,
+      attempt: attempt + 1,
+      boxChars: now.length,
+      expectedChars: text.length,
+      editor: describeEditor(ctx.el),
+      sameEl: ctx.el === original.el,
+      focused: isFocused(ctx.el),
     });
+    if (ok) return true;
   }
-  console.error('[Nobody] could not replace the text box content — please report the warnings above');
+  console.warn('[Nobody] could not replace the text box content — copy diagnostics from the Nobody popup');
   return false;
 }
 

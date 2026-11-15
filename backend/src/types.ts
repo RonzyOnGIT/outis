@@ -80,6 +80,6 @@ export const ENTITY_LABELS: Record<EntityType, string> = {
   URL: 'Link',
   SECRET: 'Secret / key',
   ID: 'ID number',
-  DATE: 'Birth date',
+  DATE: 'Date',
   USER: 'Username',
 };

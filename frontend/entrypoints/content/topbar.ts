@@ -1,4 +1,5 @@
 import { BASE_CSS, createShadowHost, h } from './ui';
+import { diag } from '@/lib/diag';
 
 /**
  * A slim status bar pinned to the top of the page:
@@ -37,12 +38,18 @@ export class TopBar {
   private root: ShadowRoot | null = null;
   private hideTimer: ReturnType<typeof setTimeout> | undefined;
 
+  private lastLogged = '';
+
   /**
    * @param fraction 0..1 for a real progress bar, undefined for an animated "working" bar.
    * @param autoHideMs hide automatically after this long (used for "ready").
    */
   show(state: BarState, title: string, sub?: string, fraction?: number, autoHideMs?: number): void {
     clearTimeout(this.hideTimer);
+    if (this.lastLogged !== state + title) {
+      this.lastLogged = state + title;
+      diag('bar', { state, title });
+    }
     if (!this.host || !this.host.isConnected) ({ host: this.host, root: this.root } = createShadowHost('nobody-topbar', CSS));
     const icon =
       state === 'loading' ? h('div', { class: 'icon' }, h('div', { class: 'spin' })) : h('div', { class: 'icon', text: state === 'ready' ? '✓' : '!' });

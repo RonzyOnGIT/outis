@@ -22,6 +22,7 @@ export { splitProtected, hasProse, type Segment } from './style/protect.js';
 export {
   rewriteText,
   splitIntoParts,
+  copiedRatio,
   type RewriteOptions,
   verifyRewrite,
   buildRewriteMessages,

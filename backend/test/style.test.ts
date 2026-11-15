@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanModelOutput, normalizeStyle, rewriteText, splitIntoParts, splitProtected, verifyRewrite, type Generate } from '../src/index.js';
+import { cleanModelOutput, copiedRatio, normalizeStyle, rewriteText, splitIntoParts, splitProtected, verifyRewrite, type Generate } from '../src/index.js';
 
 describe('light style normalizer', () => {
   it('removes common stylometric tells', () => {
@@ -59,6 +59,26 @@ describe('rewrite verification', () => {
   });
 });
 
+describe('copiedRatio', () => {
+  it('measures how much original wording survived', () => {
+    const orig = 'I need help writing an appeal letter to my insurance because they denied my claim again';
+    expect(copiedRatio(orig, orig)).toBe(1);
+    expect(copiedRatio(orig, 'My insurer rejected the claim a second time, so I would like assistance drafting an appeal.')).toBeLessThan(0.1);
+  });
+
+  it('asks for a stronger rewrite when the first one copies too much', async () => {
+    const orig = 'So I need help writing an appeal letter to my insurance company because they denied my claim again.';
+    const outputs = [orig.replace('So ', ''), 'My insurer has rejected my claim a second time, so I would like assistance drafting an appeal.'];
+    const seen: boolean[] = [];
+    const res = await rewriteText(orig, async (msgs) => {
+      seen.push(msgs[msgs.length - 1]!.content.includes('too close'));
+      return outputs.shift()!;
+    });
+    expect(seen).toEqual([false, true]);
+    expect(res.text).toContain('My insurer has rejected');
+  });
+});
+
 describe('splitIntoParts', () => {
   it('groups sentences into short parts without losing any text', () => {
     const text = 'One sentence here. Another one follows! A question? ' + 'Long sentence number four is a bit longer than the rest. '.repeat(8) + 'Last.';
@@ -84,6 +104,6 @@ describe('rewriteText', () => {
     expect(res.text).toContain('```\nError: boom\n```');
     expect(res.text).toContain('Thanks [PERSON_2]');
     expect(res.rewritten).toBe(false);
-    expect(calls).toEqual([0.5, 0.5, 0.2]);
+    expect(calls).toEqual([0.5, 0.5, 0.8, 0.2]);
   });
 });
