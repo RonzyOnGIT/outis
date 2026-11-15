@@ -34,6 +34,41 @@ export default defineContentScript({
   runAt: 'document_start',
   main() {
     const site = location.hostname;
+
+    // After the extension is updated or reloaded, this copy of the script is cut off from it
+    // (browser.runtime disappears). A fresh copy is injected into the tab; this one must then do
+    // nothing at all, so the two never both react to the same paste or Enter.
+    const instance = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    document.documentElement.setAttribute('data-nobody-instance', instance);
+    let retired = false;
+    const alive = (): boolean => {
+      if (retired) return false;
+      let connected = false;
+      try {
+        connected = Boolean(browser.runtime?.id);
+      } catch {
+        connected = false;
+      }
+      const newest = document.documentElement.getAttribute('data-nobody-instance') === instance;
+      if (!connected || !newest) {
+        retired = true;
+        try {
+          restorer.setMode('off');
+          typing.reset();
+          bar.hide();
+        } catch {
+          /* not initialised yet — nothing to clean up */
+        }
+        // Cut off and no fresh copy took over (e.g. it couldn't be injected): say so, don't fail silently.
+        if (newest && isSiteEnabled(settings, site)) {
+          setTimeout(() => {
+            if (document.documentElement.getAttribute('data-nobody-instance') !== instance) return; // a new copy arrived
+            new TopBar().show('warn', 'Nobody was updated — reload this page to stay protected', 'Press ⌘R / Ctrl+R. Until then, text here is not checked.');
+          }, 1500);
+        }
+      }
+      return !retired;
+    };
     // Listeners below are registered synchronously at document_start, so they run before any page
     // script. Until the saved settings arrive (a few ms) we work with the defaults (AI chat sites on).
     let settings: Settings = DEFAULT_SETTINGS;
@@ -41,7 +76,7 @@ export default defineContentScript({
     let busy = false;
     const bar = new TopBar();
 
-    const enabledHere = () => isSiteEnabled(settings, site);
+    const enabledHere = () => alive() && isSiteEnabled(settings, site);
 
     const restorer = new PageRestorer(() => (enabledHere() ? vault : null));
     const applyRestoreMode = () => restorer.setMode(enabledHere() ? settings.restoreMode : 'off');

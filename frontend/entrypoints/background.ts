@@ -26,6 +26,10 @@ export default defineBackground(() => {
 
   browser.runtime.onInstalled.addListener(({ reason }) => {
     if (reason === 'install') void browser.runtime.openOptionsPage();
+    // Chrome doesn't add content scripts to tabs that are already open, and an update cuts the old
+    // ones off. Inject the fresh script into every open web page so protection continues without
+    // the user reloading tabs (the disconnected old copy switches itself off).
+    void injectIntoOpenTabs();
   });
 
   browser.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
@@ -53,6 +57,17 @@ export default defineBackground(() => {
     }
   });
 });
+
+async function injectIntoOpenTabs(): Promise<void> {
+  const files = (browser.runtime.getManifest().content_scripts ?? []).flatMap((c) => c.js ?? []);
+  if (!files.length) return;
+  const tabs = await browser.tabs.query({});
+  await Promise.allSettled(
+    tabs
+      .filter((t) => t.id != null && /^https?:/.test(t.url ?? 'https:'))
+      .map((t) => browser.scripting.executeScript({ target: { tabId: t.id! }, files: files as never })),
+  );
+}
 
 let creating: Promise<void> | null = null;
 

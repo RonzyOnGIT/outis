@@ -20,7 +20,8 @@ export default defineConfig({
     name: 'Nobody',
     description:
       'Hides names, emails, addresses, IDs and your writing style before you paste into AI chats, email or bug trackers. 100% local.',
-    permissions: ['storage', 'unlimitedStorage', 'offscreen'],
+    // scripting: put Nobody into tabs that were already open when it was installed/updated.
+    permissions: ['storage', 'unlimitedStorage', 'offscreen', 'scripting'],
     // Model weights are fetched once from Hugging Face; everything else is bundled.
     host_permissions: ['https://huggingface.co/*', 'https://*.hf.co/*', 'https://raw.githubusercontent.com/*'],
     content_security_policy: {
