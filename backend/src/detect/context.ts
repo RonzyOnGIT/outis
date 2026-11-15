@@ -98,6 +98,8 @@ function fieldContext(text: string, start: number, end: number, classify: (label
     if (!lines[i]!.includes(delimiter)) break;
     const header = rowCells(lines[i]!, delimiter);
     if (header.length !== cells.length) break;
+    // A wrapped prose/data row (e.g. "$1,450 ... Union, routing") is not a column header.
+    if (header.some((c) => /[$€£]|\d{4,}|^\d/.test(c.value))) continue;
     const labels = header.map((c) => classify(c.value));
     if (labels.some((v) => v !== undefined)) return labels[column] ?? false;
   }
@@ -159,11 +161,29 @@ export function isPublicReference(text: string, span: Span): boolean {
 const IDENTIFIER = /\b(?:ssn|social security|itin|tax id|tin|passport|driver'?s? licen[cs]e|national id|id number|routing|iban|(?:member|policy|account|acct|patient|employee|student|customer|client|claim|case|reference|ref)\s*(?:id|number|no\.?|num|#))\b/i;
 const QUANTITY = /\b(?:balance|price|cost|amount|salary|rent|deposit|budget|deductible|fee|payment|revenue|rate|quantity|count|total|duration|covers|coverage|limit|deadline|due|invoice date)\b/i;
 
+/** Explicit identifier fields stay sensitive even when adjacent cells describe money or dates. */
+const IDENTIFIER_FIELD = new RegExp('^(?:' + [
+  String.raw`(?:(?:bank|ach|aba) )?routing(?: transit)?(?: number| no\.?| num| code)?`,
+  String.raw`(?:aba|rtn|iban|vin|ssn)(?: number| no\.?| num)?`,
+  String.raw`social security(?: number)?`,
+  String.raw`(?:licen[cs]e plate|number plate|vehicle registration|registration plate|plate)(?: number| no\.?| num| id)?`,
+  String.raw`(?:passport|driver'?s? licen[cs]e)(?: number| no\.?| num| id)?`,
+  String.raw`(?:lease|contract|agreement|account|acct|member|policy|employee|student|customer|client|patient|order|ticket|claim|case)(?: number| no\.?| num| id)`,
+].join('|') + ')$', 'i');
+
+export function hasIdentifierField(text: string, start: number, end: number): boolean {
+  return fieldContext(text, start, end, (label) => {
+    const normalized = normalLabel(label).replace(/\s*\([^)]{0,40}\)\s*/g, ' ').trim();
+    return IDENTIFIER_FIELD.test(normalized) ? true : undefined;
+  }) === true;
+}
+
 /** Positive quantity context can release a remembered numeric ID without releasing unlabeled repeats. */
 export function isUsefulQuantity(text: string, start: number, end: number): boolean {
+  if (hasIdentifierField(text, start, end)) return false;
   const { before, after } = nearbyContext(text, start, end);
   return lastCue(before, QUANTITY) > lastCue(before, IDENTIFIER) ||
-    /^\s*(?:(?:dollars|usd|eur|gbp|items|units|days|weeks|months|years|visits|mg|kg|km|miles|percent|ms)\b|%)/i.test(after);
+    /^\s*(?:(?:dollars|usd|eur|gbp|items|units|requests|packets|records|days|weeks|months|years|visits|mg|kg|km|miles|percent|ms)\b|%)/i.test(after);
 }
 
 /** A nearby account/claim keyword alone does not make a balance, price or quantity an ID. */

@@ -1,6 +1,6 @@
 # Context-sensitive privacy
 
-Version 0.5.0 on `feat/context-aware-privacy` applies the same local context checks to chat and
+Version 0.5.1 on `feat/context-aware-privacy` applies the same local context checks to chat and
 extracted document text, before Off/Light/AI writing-style processing. No additional model or
 network request is needed for these checks.
 
@@ -27,6 +27,14 @@ links them to a personal relationship. Uncertain proper nouns, people, direct co
 addresses, card/account identifiers, SSNs and secrets retain protection. A nearby “account” or
 “policy” alone no longer makes an ordinary balance or quantity an ID.
 
+Version 0.5.1 fixes missed routing numbers when PDF extraction wraps “routing” and “number” onto
+different lines. Explicit routing/ABA/RTN labels, licence/license plates, VINs and lease/contract IDs
+have dedicated rules; recognized identifier fields also work in forms, JSON and table columns.
+These detections stay protected despite adjacent amount/date/public-reference language and do not
+depend on the name model. Labelled routing values do not need a valid checksum to be masked.
+Street-address rules include a single-letter direction and wrapped city/unit details. Remembered
+IDs match whole values rather than prefixes of longer IDs or dates.
+
 Remembered values and repeated mentions are rechecked at each occurrence: a hidden DOB does not
 force the same date to disappear from a later deadline, and a private city does not force it to
 disappear from a separate weather question. Explicit **Always hide** entries bypass the context
@@ -46,3 +54,6 @@ Verification covers mixed sensitive/useful dates, structured fields, expiry form
 personal references, direct identifiers, propagation, explicit overrides, settings migration and
 cross-document vault reuse. The built-extension document regression checks real PDF extraction
 and delivery of cleaned `.txt` copies with sensitive dates replaced and useful dates retained.
+It also checks wrapped routing labels and vehicle/lease identifiers while preserving amounts,
+notice periods and vehicle model years. A supplied PDF can be tested locally using the optional
+`DOCUMENT_REGRESSION` fixture described in [DOCUMENTS.md](DOCUMENTS.md).

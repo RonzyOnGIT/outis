@@ -1,7 +1,7 @@
 // Built-extension regression tests. New browser profile; network models deliberately unavailable.
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
@@ -45,7 +45,7 @@ function pdf(pages) {
   for (const text of pages) {
     const pageId = objects.length;
     refs.push(`${pageId} 0 R`);
-    const content = text ? `BT /F1 12 Tf 50 750 Td (${text.replace(/[\\()]/g, '\\$&')}) Tj ET` : '';
+    const content = text ? `BT /F1 12 Tf 50 750 Td ${text.split('\n').map((line, i) => `${i ? '0 -16 Td ' : ''}(${line.replace(/[\\()]/g, '\\$&')}) Tj`).join('\n')} ET` : '';
     objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${pageId + 1} 0 R >>`);
     objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
   }
@@ -177,7 +177,7 @@ try {
     return result.result.value;
   }
   const selection = (name, buffer) => page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer });
-  await page.locator('#files').setInputFiles([{ name: 'Alice Example.docx', mimeType: 'application/octet-stream', buffer: docx }, { name: 'alice@example.com.pdf', mimeType: 'application/pdf', buffer: pdf([`DOB: 1991-03-14; Deadline: 2026-11-30; Card expiry: 04/28. ${EMAIL}`]) }]);
+  await page.locator('#files').setInputFiles([{ name: 'Alice Example.docx', mimeType: 'application/octet-stream', buffer: docx }, { name: 'alice@example.com.pdf', mimeType: 'application/pdf', buffer: pdf([`DOB: 1991-03-14; Deadline: 2026-11-30; Card expiry: 04/28. ${EMAIL}\nRouting\nnumber 271828184; licence plate KTR-7293; lease No. LS-2028-58312.\nRent $1450; notice 30 days; car model 2019.`]) }]);
   await ready();
   assert.equal(await panelVisible(), true, 'review must be visible despite page popover CSS');
   // Sites can remove injected nodes or close top-layer popovers during an upload re-render.
@@ -202,6 +202,9 @@ try {
   assert.ok(first[0].text.includes('[PERSON_1]'));
   assert.match(first[1].text, /DOB: \[DATE_1\]; Deadline: 2026-11-30; Card expiry: \[DATE_2\]/);
   assert.doesNotMatch(first[1].text, /1991-03-14|04\/28/);
+  assert.doesNotMatch(first[1].text, /271828184|KTR-7293|LS-2028-58312/);
+  assert.match(first[1].text, /number \[ID_\d+\]; licence plate \[ID_\d+\]; lease No\. \[ID_\d+\]/);
+  assert.ok(first[1].text.includes('Rent $1450; notice 30 days; car model 2019.'));
   const vaultBefore = await options.evaluate(async () => (await chrome.storage.session.get('vault:127.0.0.1'))['vault:127.0.0.1']);
   await selection('cancel.txt', Buffer.from('cancel@example.com'));
   await ready(); await page.keyboard.press('Escape');
@@ -239,12 +242,37 @@ try {
   assert.match((await downloaded).suggestedFilename(), /^attachment-\d+\.txt$/);
   assert.equal(uploads.length, 3);
 
+  // Optional local fixture: exercise a reported PDF without storing its private contents in the repo.
+  // JSON: { path: "/local/file.pdf", hidden: ["identifier"], kept: ["useful detail"] }
+  if (process.env.DOCUMENT_REGRESSION) {
+    const fixture = JSON.parse(readFileSync(process.env.DOCUMENT_REGRESSION, 'utf8'));
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#nobody-documents', { state: 'detached' });
+    await options.evaluate(async () => {
+      const { settings } = await chrome.storage.local.get('settings');
+      await chrome.storage.local.set({ settings: { ...settings, defaultStyle: 'off' } });
+    });
+    await page.evaluate(() => {
+      const input = document.createElement('input'); input.type = 'file'; input.id = 'files'; document.body.append(input);
+    });
+    await page.waitForTimeout(100);
+    const before = uploads.length;
+    await selection('regression.pdf', readFileSync(fixture.path)); await ready();
+    assert.equal(uploads.length, before, 'original reported PDF stays held');
+    await click('Attach cleaned copies'); await until(() => uploads.length > before, 'reported PDF clean upload');
+    const normalize = value => value.replace(/\s+/g, ' ').trim();
+    const cleaned = normalize(uploads.at(-1).files[0].text);
+    for (const value of fixture.hidden) assert.ok(!cleaned.includes(normalize(value)), 'reported identifier must be hidden');
+    for (const value of fixture.kept) assert.ok(cleaned.includes(normalize(value)), 'useful reported detail must be kept');
+    console.log('PASS: supplied PDF through extraction, fallback detection, review and cleaned attachment delivery');
+  }
+
   const diagnostics = await options.evaluate(async () => JSON.stringify((await chrome.storage.session.get('nobody:diag'))['nobody:diag']));
   assert.doesNotMatch(diagnostics, /Alice|alice@example|cancel@example|private\.txt|rerender\.txt/);
   assert.deepEqual(errors, []);
   assert.ok(diagnostics.includes('documents-review-ready'));
   assert.ok(diagnostics.includes('documents-extracted'));
-  console.log('PASS: visible/recoverable review under conflicting CSS, real mouse actions, original input events held, batch upload, contextual PDF dates and remembered values, shared placeholders, cancellation, all-or-nothing failure, drop, file paste, settings invalidation, download fallback, closed preview and private diagnostics');
+  console.log('PASS: visible/recoverable review under conflicting CSS, real mouse actions, original input events held, batch upload, contextual PDF dates, wrapped routing numbers, vehicle/lease IDs, remembered values, shared placeholders, cancellation, all-or-nothing failure, drop, file paste, settings invalidation, download fallback, closed preview and private diagnostics');
 } finally {
   await context?.close();
   await new Promise(resolve => server.close(resolve));

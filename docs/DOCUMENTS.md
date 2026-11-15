@@ -5,6 +5,8 @@ hover-restore flows remain available.
 
 Version 0.5 uses [context checks](CONTEXT.md) for dates, public company/place references and
 remembered values. Personal dates are replaced while useful deadlines and invoice dates remain.
+Version 0.5.1 protects routing labels across PDF line wraps, adds vehicle/lease identifier rules,
+and captures street addresses with single-letter directions and wrapped city/unit details.
 
 Version 0.4.1 fixes invisible on-page UI: the shared shadow host has explicit viewport dimensions
 and protected visibility styles, including `content-visibility`. Attachment panels recover if a
@@ -117,3 +119,9 @@ deliberately blocked in this suite so fallback behavior is exercised without lar
 
 Real chat-site attachment adapters and real-model document runs still need manual verification.
 The existing optional real-NER integration test remains separate from the default tests.
+
+For a locally supplied PDF regression, create a JSON file outside the repository with
+`{"path":"/local/file.pdf","hidden":["identifier to remove"],"kept":["useful detail"]}` and run
+`DOCUMENT_REGRESSION=/local/fixture.json npm run test:documents` from `frontend/e2e`.
+The suite selects that PDF in its localhost upload simulator and checks the delivered cleaned text.
+Whitespace is normalized for assertions; fixture paths/contents are not added to the repository.

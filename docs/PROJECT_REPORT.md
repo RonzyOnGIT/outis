@@ -1,9 +1,11 @@
 # Nobody (repo: outis): project report
 
-*Context update: version 0.5.0 · branch `feat/context-aware-privacy`*
+*Context update: version 0.5.1 · branch `feat/context-aware-privacy`*
 
 This branch adds context-sensitive date and public-reference handling for chat and document text.
 See [CONTEXT.md](CONTEXT.md) for behavior, override precedence, migration and verification.
+Version 0.5.1 fixes routing-label line-wrap misses, adds vehicle and lease identifier detection,
+and protects complete street addresses with single-letter directions.
 
 The original report below describes the text workflow. Version 0.4 adds attachment interception
 before upload and reviewed, anonymized `.txt` copies from PDF, Office/OpenDocument, RTF and text

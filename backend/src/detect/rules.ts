@@ -1,6 +1,6 @@
 import type { EntityType, Span } from '../types.js';
 import { digitsOnly, ibanValid, luhnValid, shannonEntropy } from './validators.js';
-import { hasIdentifierContext, isSensitiveDate } from './context.js';
+import { hasIdentifierContext, hasIdentifierField, isSensitiveDate } from './context.js';
 import { dateCandidates } from './dates.js';
 
 /**
@@ -93,9 +93,35 @@ const RECOGNIZERS: Recognizer[] = [
     name: 'labelled-id',
     type: 'ID',
     pattern:
-      /\b(?:passport|ssn|social security|driver'?s? licen[cs]e|licen[cs]e|employee|student|customer|member|client|patient|account|acct|policy|tax|national|personal|order|ticket)\s*(?:id|no\.?|number|num|#)\s*(?:is\s*)?[:#]?\s*([A-Z0-9][A-Z0-9-]{3,24})\b/dgi,
+      /\b(?:passport|ssn|social\s+security|driver'?s?\s+licen[cs]e|licen[cs]e|employee|student|customer|member|client|patient|account|acct|policy|tax|national|personal|order|ticket|lease|contract|agreement)\s*(?:id|no\.?|number|num|#)\s*(?:is\s*)?[:=#]?\s*([A-Z0-9][A-Z0-9-]{3,24})\b/dgi,
     group: 1,
     validate: (v) => /\d/.test(v),
+  },
+  {
+    name: 'bank-routing',
+    type: 'ID',
+    // A strong label spans PDF line wraps. Never require a checksum: mistyped/test IDs are private too.
+    pattern: /\b(?:(?:bank|ach|aba)\s+)?(?:routing(?:[\s_-]+transit)?(?:[\s_-]*(?:number|num|no\.?|code|#))?|aba(?:[\s_-]+transit)?(?:[\s_-]*(?:number|num|no\.?|#))?|rtn)\b["']?\s*(?:is\s*)?[:=#]?\s*["']?(\d(?:[\s-]*\d){8})(?!\d)/dgi,
+    group: 1,
+  },
+  {
+    name: 'vehicle-identifier',
+    type: 'ID',
+    pattern: /\b(?:licen[cs]e[\s_-]*plate|number[\s_-]*plate|registration[\s_-]*plate|vehicle[\s_-]*registration|vin)(?:[\s_-]*(?:number|num|no\.?|id|#))?\b["']?\s*(?:is\s*)?[:=#]?\s*["']?([A-Z]{1,4}[ -]\d{1,4}|[A-Z]{1,3}\d{1,3}[ \t][A-Z]{1,3}|[A-Z0-9][A-Z0-9-]{0,16})\b(?![\w-])/dgi,
+    group: 1,
+    validate: (value, text, start, end) => {
+      if (/^(?:number|renewal|registration|fee|fees|cost|costs|format|formats|design|color|colour|state|expired|expires|stolen|missing|unknown|none|pending)$/i.test(value)) return false;
+      // Permit vanity plates in explicit fields and uppercase prose, without mistaking ordinary prose for one.
+      return /\d/.test(value) || value === value.toUpperCase() || hasIdentifierField(text, start, end);
+    },
+  },
+  {
+    name: 'identifier-field',
+    type: 'ID',
+    // JSON keys / CSV-TSV headers / standalone form labels; explicit fields outrank date/quantity exceptions.
+    pattern: /(?<![\p{L}\p{N}_$./-])[A-Z0-9][A-Z0-9-]{0,24}(?![\p{L}\p{N}_/-])/dgiu,
+    validate: (value, text, start, end) =>
+      (/\d/.test(value) || (value.length >= 2 && value === value.toUpperCase())) && hasIdentifierField(text, start, end),
   },
   { name: 'mac-address', type: 'ID', pattern: /\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b/dg },
 
@@ -127,7 +153,7 @@ const RECOGNIZERS: Recognizer[] = [
     name: 'street-address',
     type: 'ADDRESS',
     pattern: new RegExp(
-      String.raw`\b\d{1,5}[A-Za-z]?\s+(?:[A-Z][a-zA-Z'.-]+\s+){1,4}` +
+      String.raw`\b\d{1,5}[A-Za-z]?\s+(?:(?:N|S|E|W|NE|NW|SE|SW)\.?\s+)?(?:[A-Z][a-zA-Z'.-]+\s+){1,4}` +
         STREET_SUFFIX +
         String.raw`\b\.?(?:,?\s+(?:Apt|Apartment|Suite|Ste|Unit|Fl|Floor|#)\.?\s*[\w-]+)?` +
         String.raw`(?:,\s*[A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+){0,2})?(?:,?\s*[A-Z]{2})?(?:\s+\d{5}(?:-\d{4})?)?`,

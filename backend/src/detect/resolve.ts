@@ -34,7 +34,18 @@ export function detectDictionary(text: string, entries: DictionaryEntry[] = []):
 
 /** Remembered values are suggestions, not the user's explicit Always hide overrides. */
 export function detectKnownValues(text: string, entries: DictionaryEntry[] = []): Span[] {
-  return detectDictionary(text, entries).map((s) => ({ ...s, source: 'propagated' }));
+  return detectDictionary(text, entries)
+    .filter((s) => s.type !== 'ID' || completeIdentifierOccurrence(text, s.start, s.end))
+    .map((s) => ({ ...s, source: 'propagated' }));
+}
+
+/** Do not remember/propagate a short ID into part of a longer ID or calendar date. */
+function completeIdentifierOccurrence(text: string, start: number, end: number): boolean {
+  const before = text[start - 1] ?? '';
+  const after = text[end] ?? '';
+  return !/[-/]/.test(before + after) &&
+    !(before === '.' && /\w/.test(text[start - 2] ?? '')) &&
+    !(after === '.' && /\w/.test(text[end + 1] ?? ''));
 }
 
 function sensitiveInContext(text: string, span: Span): boolean {
@@ -107,6 +118,7 @@ export function propagate(text: string, spans: Span[]): Span[] {
       if (seen.has(key)) continue;
       seen.add(key);
       for (const [start, end] of findWord(text, term, caseSensitive)) {
+        if (s.type === 'ID' && !completeIdentifierOccurrence(text, start, end)) continue;
         extra.push({ start, end, type: s.type, text: text.slice(start, end), source: 'propagated', score: s.score });
       }
     }

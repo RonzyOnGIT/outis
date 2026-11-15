@@ -66,6 +66,17 @@ describe('shared local document privacy pipeline', () => {
     }, services());
     expect(result.text).toBe('Deadline: [DATE_1]');
   });
+  it('protects wrapped routing labels and vehicle/lease IDs even without the name detector', async () => {
+    const input: ExtractedDocument = { format: 'pdf', notes: [], blocks: [
+      { text: 'Lease No. LS-2028-58312. Rent $1450. Routing', prose: true },
+      { text: 'number 271828184; license plate KTR-7293. Deadline July 1, 2028.', prose: true },
+    ] };
+    const result = await sanitizeDocument(input, new Vault(), { style: 'off' }, services({
+      analyze: async () => ({ spans: [], nerUsed: false }),
+    }));
+    expect(result.text).toBe('Lease No. [ID_1]. Rent $1450. Routing\n\nnumber [ID_2]; license plate [ID_3]. Deadline July 1, 2028.');
+    expect(result.notes.join(' ')).toContain('Name detection was unavailable');
+  });
   it('keeps structured values and punctuation intact when AI style is selected', async () => {
     let calls = 0;
     const input = '{"email":"alice@example.com","amount":2.25,"note":"Honestly!!"}';
