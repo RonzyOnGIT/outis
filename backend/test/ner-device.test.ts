@@ -19,6 +19,18 @@ describe('NER token alignment', () => {
     ]);
   });
 
+  it('aligns lower-cased, accent-stripped tokens from uncased models to the original text', () => {
+    const text = 'email John Smithers in São Paulo';
+    const p = (token: string, label = 'O'): TokenPrediction => ({ token, label, score: 0.95 });
+    const spans = groupPredictions(text, [
+      p('email'), p('john', 'B-PER'), p('smith', 'I-PER'), p('##ers', 'I-PER'), p('in'), p('sao', 'B-LOC'), p('paulo', 'I-LOC'),
+    ]);
+    expect(spans.map((s) => [s.type, s.text])).toEqual([
+      ['PERSON', 'John Smithers'],
+      ['LOCATION', 'São Paulo'],
+    ]);
+  });
+
   it('starts a new entity on B- and ignores MISC', () => {
     const text = 'Anna Bob use Python';
     const spans = groupPredictions(text, [

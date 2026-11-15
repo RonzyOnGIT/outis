@@ -64,9 +64,13 @@ export function getRewriteModel(tier: StyleTier): RewriteModel {
   return REWRITE_MODELS.find((m) => m.tier === tier) ?? REWRITE_MODELS[0]!;
 }
 
-/** Name-detection model (runs on CPU via WebAssembly, ~108 MB, English). */
+/**
+ * Name-detection model (runs on CPU via WebAssembly, ~110 MB, English).
+ * Uncased on purpose: people type "john smith" in chats; a cased model misses lowercase names.
+ */
 export const NER_MODEL = {
-  id: 'Xenova/bert-base-NER',
+  id: 'Xenova/bert-base-NER-uncased',
+  name: 'bert-base-NER (uncased)',
   dtype: 'q8' as const,
-  downloadMB: 109,
+  downloadMB: 110,
 };

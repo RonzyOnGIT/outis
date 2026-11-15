@@ -10,6 +10,7 @@ import {
 } from '@nobody/engine';
 import { engine, newRequestId, onProgress } from '@/lib/messages';
 import {
+  DEFAULT_SETTINGS,
   ENTER_SENDS_SITES,
   isSiteEnabled,
   loadSettings,
@@ -30,19 +31,28 @@ type Outcome = 'replaced' | 'kept' | 'cancelled';
 export default defineContentScript({
   matches: ['<all_urls>'],
   runAt: 'document_start',
-  async main() {
+  main() {
     const site = location.hostname;
-    let settings: Settings = await loadSettings();
-    // Ask the background to open RAM-only session storage to us before reading placeholder memory.
-    await browser.runtime.sendMessage({ type: 'hello' }).catch(() => {});
-    let vault = new Vault(await loadVault(site, settings.memory));
+    // Listeners below are registered synchronously at document_start, so they run before any page
+    // script. Until the saved settings arrive (a few ms) we work with the defaults (AI chat sites on).
+    let settings: Settings = DEFAULT_SETTINGS;
+    let vault = new Vault();
     let busy = false;
 
     const enabledHere = () => isSiteEnabled(settings, site);
 
     const restorer = new PageRestorer(() => (enabledHere() ? vault : null));
     const applyRestoreMode = () => restorer.setMode(enabledHere() ? settings.restoreMode : 'off');
-    applyRestoreMode();
+
+    void (async () => {
+      settings = await loadSettings();
+      // Ask the background to open RAM-only session storage to us before reading placeholder memory.
+      await browser.runtime.sendMessage({ type: 'hello' }).catch(() => {});
+      vault = new Vault(await loadVault(site, settings.memory));
+      applyRestoreMode();
+      // Warm up the name detector so the first check (and the first Enter) is instant.
+      if (enabledHere()) void engine.initNer().catch(() => {});
+    })();
 
     onSettingsChanged(async (s) => {
       const memoryChanged = s.memory !== settings.memory;
@@ -98,7 +108,7 @@ export default defineContentScript({
 
         if (!spans.length && settings.defaultStyle !== 'ai') {
           panel.close();
-          if (opts.mode === 'paste') insertText(ctx, text);
+          if (opts.mode === 'paste') await insertText(ctx, text);
           else refocus(ctx);
           toast('Nobody: no personal info found');
           return 'kept';
@@ -132,11 +142,11 @@ export default defineContentScript({
           // Remember placeholders (per the memory setting) so later messages and answers stay consistent.
           anonymize(text, result.spans, snapshot);
           await saveVault(site, snapshot.toJSON(), settings.memory);
-          insertText(opts.mode === 'field' ? selectAll(ctx) : ctx, result.text);
+          await insertText(opts.mode === 'field' ? selectAll(ctx) : ctx, result.text);
           return 'replaced';
         }
         if (result.action === 'original') {
-          if (opts.mode === 'paste') insertText(ctx, text);
+          if (opts.mode === 'paste') await insertText(ctx, text);
           else refocus(ctx);
           return 'kept';
         }
@@ -173,7 +183,8 @@ export default defineContentScript({
     // --- 2. Typed text: live underline + badge, and a guard on send. ---
     const typing = new TypingGuard({
       enabled: () => enabledHere() && settings.guardTyping,
-      enterSends: () => ENTER_SENDS_SITES.has(site),
+      // AI chats (built-in list or sites you added) send on Enter; elsewhere Enter is a newline.
+      enterSends: () => ENTER_SENDS_SITES.has(site) || settings.sites[site] === true,
       isBusy: () => busy,
       analyze: async (text) => (await detect(text, 5_000)).spans,
       quickCheck,

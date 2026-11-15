@@ -13,7 +13,7 @@ npm run build        # builds backend (engine) then frontend (extension)
 Then in Chrome or Edge: `chrome://extensions` → enable **Developer mode** → **Load unpacked** → pick `frontend/dist/chrome-mv3` (in the macOS picker press ⌘⇧G and paste the full path).
 
 The setup page opens automatically:
-1. It checks the device (WebGPU, GPU type, memory) and downloads the name detector (109 MB, once).
+1. It checks the device (WebGPU, GPU type, memory) and downloads the name detector (110 MB, once).
 2. Pick a writing-style model — **Light** (no AI), **Fast** (Qwen3.5 2B, 1.1 GB), **Balanced** (Qwen3.5 4B, 2.4 GB) or **Quality** (Qwen3 8B, 4.6 GB). Each card says how well it fits this device; *Download & test* measures real speed.
 3. Add your own name/company under *Always hide*.
 
@@ -62,7 +62,7 @@ web page ──paste──► content script (capture phase, before the site see
 
 ## Known limits (demo)
 
-- Name detection is English-only (`bert-base-NER`). A multilingual model is a drop-in swap (+30 MB).
+- Name detection is English-only (`bert-base-NER-uncased`). A multilingual model is a drop-in swap (+30 MB).
 - Files and screenshots aren't handled yet.
 - Plain Enter is guarded only on known chat sites (elsewhere it's a newline); other sites rely on Ctrl/⌘+Enter and Send/submit buttons. Sites with unusual send buttons may need a selector added in `isSendButton`.
 - A site's own "Copy" button copies the placeholder version.

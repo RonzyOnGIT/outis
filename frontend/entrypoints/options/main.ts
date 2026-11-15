@@ -5,6 +5,7 @@ import {
   ENTITY_LABELS,
   ENTITY_TYPES,
   FIT_LABELS,
+  NER_MODEL,
   findPlaceholders,
   normalizeStyle,
   probeDevice,
@@ -139,7 +140,7 @@ async function prepareNer() {
   try {
     await engine.initNer(requestId);
     nerBox.replaceChildren(
-      h('div', { class: 'row' }, h('span', { class: 'badge ok', text: '✓ Ready' }), h('span', { class: 'muted small', text: 'bert-base-NER · 109 MB · English names, organisations, places' })),
+      h('div', { class: 'row' }, h('span', { class: 'badge ok', text: '✓ Ready' }), h('span', { class: 'muted small', text: `${NER_MODEL.name} · ${NER_MODEL.downloadMB} MB · English names, organisations, places — any capitalisation` })),
     );
   } catch (e) {
     nerBox.replaceChildren(

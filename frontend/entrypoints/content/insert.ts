@@ -46,7 +46,37 @@ export function selectAll(ctx: InsertionContext): InsertionContext {
   return { ...ctx, range };
 }
 
-export function insertText(ctx: InsertionContext, text: string): void {
+/**
+ * Rich editors (ProseMirror on ChatGPT/Claude, Gmail…) keep their own copy of the selection and
+ * only pick up DOM selection changes on the async "selectionchange" event. Wait for it before
+ * pasting, or the editor pastes at its old cursor position (e.g. after the original text).
+ */
+function selectionSettled(): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      document.removeEventListener('selectionchange', finish);
+      setTimeout(resolve, 0); // let the editor's own selectionchange handler run first
+    };
+    document.addEventListener('selectionchange', finish);
+    setTimeout(finish, 60);
+  });
+}
+
+function selectRange(range: Range | null): Selection | null {
+  const sel = window.getSelection();
+  if (sel && range) {
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+  return sel;
+}
+
+const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+export async function insertText(ctx: InsertionContext, text: string): Promise<void> {
   ctx.el.focus();
   if (ctx.kind === 'input') {
     const el = ctx.el;
@@ -61,11 +91,10 @@ export function insertText(ctx: InsertionContext, text: string): void {
     return;
   }
 
-  const sel = window.getSelection();
-  if (sel && ctx.range) {
-    sel.removeAllRanges();
-    sel.addRange(ctx.range);
-  }
+  const replacingAll = ctx.range !== null && rangeCoversElement(ctx.range, ctx.el);
+  const sel = selectRange(ctx.range);
+  await selectionSettled();
+
   // Rich editors handle paste events best (they keep their own document model in sync).
   const data = new DataTransfer();
   data.setData('text/plain', text);
@@ -73,6 +102,26 @@ export function insertText(ctx: InsertionContext, text: string): void {
   const target = (sel?.anchorNode instanceof Element ? sel.anchorNode : sel?.anchorNode?.parentElement) ?? ctx.el;
   (ctx.el.contains(target) ? target : ctx.el).dispatchEvent(event);
   if (!event.defaultPrevented) document.execCommand('insertText', false, text);
+
+  // Safety net for whole-box replacement: if the editor still kept the old text, select
+  // everything again and overwrite it, so the original can never be sent alongside.
+  if (replacingAll) {
+    await new Promise((r) => setTimeout(r, 30));
+    if (squash(ctx.el.innerText ?? '') !== squash(text)) {
+      ctx.el.focus();
+      const all = document.createRange();
+      all.selectNodeContents(ctx.el);
+      selectRange(all);
+      await selectionSettled();
+      document.execCommand('insertText', false, text);
+    }
+  }
+}
+
+function rangeCoversElement(range: Range, el: HTMLElement): boolean {
+  const all = document.createRange();
+  all.selectNodeContents(el);
+  return range.compareBoundaryPoints(Range.START_TO_START, all) <= 0 && range.compareBoundaryPoints(Range.END_TO_END, all) >= 0;
 }
 
 /** Put focus back where the user was (after cancelling the panel). */

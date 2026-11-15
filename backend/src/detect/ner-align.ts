@@ -16,26 +16,61 @@ export interface TokenPrediction {
 
 const UNKNOWN_TOKENS = new Set(['[UNK]', '<unk>']);
 
-/** Map each token to [start, end) in `text`, or null if it could not be located. */
+/** Lower-case, accent-free form used for matching (uncased tokenizers emit "john", "sao" for "John", "São"). */
+function fold(s: string): string {
+  return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
+
+/**
+ * Fold `text` character by character, remembering which original index each folded
+ * character came from — so matches in the folded text map back to exact original offsets.
+ */
+function foldWithMap(text: string): { folded: string; map: number[] } {
+  let folded = '';
+  const map: number[] = [];
+  for (let i = 0; i < text.length; ) {
+    const cp = text.codePointAt(i)!;
+    const ch = String.fromCodePoint(cp);
+    const f = fold(ch);
+    for (let k = 0; k < f.length; k++) map.push(i);
+    folded += f;
+    i += ch.length;
+  }
+  map.push(text.length);
+  return { folded, map };
+}
+
+/**
+ * Map each token to [start, end) in `text`, or null if it could not be located.
+ * Works for cased and uncased (lower-casing, accent-stripping) WordPiece tokenizers.
+ */
 export function alignTokens(text: string, tokens: string[]): Array<[number, number] | null> {
-  let cursor = 0;
+  const { folded, map } = foldWithMap(text);
+  const toOriginal = (fStart: number, fEnd: number): [number, number] => {
+    const start = map[fStart]!;
+    const lastChar = map[fEnd - 1]!;
+    // End = end of the original character that produced the last folded char.
+    const end = lastChar + String.fromCodePoint(text.codePointAt(lastChar)!).length;
+    return [start, end];
+  };
+  let cursor = 0; // in folded coordinates
   return tokens.map((tok) => {
     if (UNKNOWN_TOKENS.has(tok)) {
       let start = cursor;
-      while (start < text.length && /\s/.test(text[start]!)) start++;
+      while (start < folded.length && /\s/.test(folded[start]!)) start++;
       let end = start;
-      while (end < text.length && !/\s/.test(text[end]!)) end++;
+      while (end < folded.length && !/\s/.test(folded[end]!)) end++;
       if (end === start) return null;
       cursor = end;
-      return [start, end];
+      return toOriginal(start, end);
     }
-    const piece = tok.startsWith('##') ? tok.slice(2) : tok.replace(/^▁/, '');
+    const piece = fold(tok.startsWith('##') ? tok.slice(2) : tok.replace(/^▁/, ''));
     if (!piece) return null;
-    const idx = text.indexOf(piece, cursor);
+    const idx = folded.indexOf(piece, cursor);
     // Tokens appear in order; a large jump means we lost sync, so skip this one.
     if (idx < 0 || idx - cursor > 24) return null;
     cursor = idx + piece.length;
-    return [idx, cursor];
+    return toOriginal(idx, cursor);
   });
 }
 

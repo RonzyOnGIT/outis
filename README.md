@@ -18,7 +18,7 @@ The **setup page** opens by itself.
 
 ## Setup (first time only)
 
-1. Wait for the **name detector** to show **✓ Ready** (downloads 109 MB once).
+1. Wait for the **name detector** to show **✓ Ready** (downloads 110 MB once).
 2. Pick a **writing-style model**. Nobody marks the best one for your computer:
 
    | Model | Download | Good for |
