@@ -1,4 +1,4 @@
-# Nobody (repo: outis): project report
+# Outis (repo: outis): project report
 
 *Context update: version 0.5.1 · branch `feat/context-aware-privacy`*
 
@@ -17,9 +17,9 @@ This report describes what is in the repository, how every part works, how to bu
 
 ---
 
-## 1. What Nobody is
+## 1. What Outis is
 
-Nobody is a **Chrome/Edge browser extension** that protects you before you send text to an AI chat (ChatGPT, Claude, Gemini, Copilot, Perplexity, DeepSeek, Mistral):
+Outis is a **Chrome/Edge browser extension** that protects you before you send text to an AI chat (ChatGPT, Claude, Gemini, Copilot, Perplexity, DeepSeek, Mistral):
 
 1. **Personal info → placeholders.** Names, organisations, places, addresses, emails, phones, card numbers, IBANs, IDs/SSNs, dates, secrets/API keys, IPs and usernames in file paths are replaced with consistent placeholders such as `[PERSON_1]`, `[EMAIL_1]`. The same person keeps the same placeholder across messages.
 2. **Writing style → neutral.** The text is rewritten into one plain, everyday voice (the *Outis neutralizer*), so services cannot recognise the author by their writing habits.
@@ -62,7 +62,7 @@ outis/
 │   │   │   └── anonymize.ts      replace spans, restore placeholders, find placeholders
 │   │   ├── style/
 │   │   │   ├── neutralizer.ts    ★ Outis neutralizer (TS port) — the style engine
-│   │   │   ├── neutral.ts        ★ Nobody wrapper: protects code/logs/links, privacy checks
+│   │   │   ├── neutral.ts        ★ Outis wrapper: protects code/logs/links, privacy checks
 │   │   │   ├── protect.ts        code/log line detection (CODE_LINE), segment splitter
 │   │   │   ├── rewrite.ts        legacy rewrite pipeline + shared types (Generate, RewriteResult)
 │   │   │   └── normalize.ts      legacy "Light" normalizer (no longer used by the extension)
@@ -118,7 +118,7 @@ npm run dev            # extension with hot reload in a fresh browser profile (W
 
 **Install in Chrome:** `chrome://extensions` → Developer mode → **Load unpacked** → `outis/frontend/dist/chrome-mv3`. The setup page opens automatically.
 
-**After changing code:** `npm run build`, then ↻ on the Nobody card, then reload chat tabs (v0.2+ also injects the new content script into open tabs automatically).
+**After changing code:** `npm run build`, then ↻ on the Outis card, then reload chat tabs (v0.2+ also injects the new content script into open tabs automatically).
 
 > **Important (found during development):** a long-installed unpacked extension can keep running a **stale cached background service worker** even after files change. Always bump the version in `frontend/package.json` (and `backend/package.json`) for user-facing builds; if behaviour looks old, **Remove** the extension and **Load unpacked** again (this deletes downloaded models, so they must be downloaded again in setup). The popup shows `Build <UTC timestamp>` and the diagnostics record the build that each page runs.
 
@@ -182,10 +182,10 @@ A TypeScript port of the team's `outis-neutralizer` (originally `~/Downloads/out
 1. **Surface rules** (always, instant): dashes/ellipses/`!!`/semicolons → commas and periods; parentheses folded in; shorthand expanded (`lmk`, `idk`, `w/`, `u`); fillers removed (honestly, literally, lol…); slangy intensifiers → plain ones; openers removed (So, Ok, Hey; stacked ones too); ALL CAPS lowered (acronyms kept); **contractions written out** (I'm → I am; a deliberate crowd habit); stacked hedges collapsed; formal words → everyday words (require → need, physician → doctor, regarding → about…); emoji removed.
 2. **Units**: sentences (abbreviations like "Dr." don't split); fragments under 4 words are joined to the sentence before ("…It was." → one unit).
 3. **Model** (optional): units go to the local model **numbered, in batches of 4**, with a system prompt and three example pairs that each show a trap (slang, formal drift, hedges, requests). Mode `all` = every sentence (most neutral, default), `auto` = only units the rules can't finish (joined/very short/very long/heavily edited), `off` = rules only.
-4. **Checks per sentence** (any failure rejects it): placeholders identical; numbers identical (word numbers counted); negation kept; **conditionals (if/unless/whether) kept** (Nobody addition); question stays a question; anchor words kept (actions like ordered/denied/said/suspects, repeats like again/already, the request words); ≥ 70 % of content words kept; certainty unchanged; no added intensifiers; no new formal words; not an answer; length 0.5–1.6×. Nobody adds: no new personal data (pattern rules) and no invented names (NER).
+4. **Checks per sentence** (any failure rejects it): placeholders identical; numbers identical (word numbers counted); negation kept; **conditionals (if/unless/whether) kept** (Outis addition); question stays a question; anchor words kept (actions like ordered/denied/said/suspects, repeats like again/already, the request words); ≥ 70 % of content words kept; certainty unchanged; no added intensifiers; no new formal words; not an answer; length 0.5–1.6×. Outis adds: no new personal data (pattern rules) and no invented names (NER).
 5. **Retry once with the exact problems**, then fall back to that sentence's rules version (always factually safe). One bad sentence never affects the others.
 
-`neutral.ts` wraps it for Nobody: code fences and code/log/stack-trace lines are never touched; inside prose, inline `code`, links, emails and file names are masked as `[CODE_n]` so neither the rules nor the model can alter them.
+`neutral.ts` wraps it for Outis: code fences and code/log/stack-trace lines are never touched; inside prose, inline `code`, links, emails and file names are masked as `[CODE_n]` so neither the rules nor the model can alter them.
 
 *Light* style in the extension = `neutralizeLight()` (rules only). *AI rewrite* = `neutralizeWithModel()` via `NobodyEngine.rewrite()`.
 
@@ -262,7 +262,7 @@ Hosts one `NobodyEngine`. Request types (`lib/messages.ts`): `ner.init`, `analyz
 
 **Restore in answers** (`restore.ts`): mode `hover` (default): placeholders in the page are tinted (CSS highlight) and hovering shows the real value in a closed-shadow tooltip, so the page DOM never contains real values (safe against analytics/session replay). Mode `replace` (opt-in) writes real values into text nodes.
 
-**UI technique** (`ui.ts`): every Nobody UI element lives in a **closed shadow root** (page scripts can't read it), is shown in the browser **top layer** (Popover API, `popover="manual"`), and is styled with a **constructed stylesheet** (not blocked by page CSP). `reportVisibility()` logs whether it is really on screen.
+**UI technique** (`ui.ts`): every Outis UI element lives in a **closed shadow root** (page scripts can't read it), is shown in the browser **top layer** (Popover API, `popover="manual"`), and is styled with a **constructed stylesheet** (not blocked by page CSP). `reportVisibility()` logs whether it is really on screen.
 
 ### 6.5 Setup page and popup
 
@@ -273,7 +273,7 @@ Hosts one `NobodyEngine`. Request types (`lib/messages.ts`): `ner.init`, `analyz
 
 | Key | Default | Meaning |
 |---|---|---|
-| `sites` | AI chat sites (8) | where Nobody is active; listed sites are also treated as "Enter sends" |
+| `sites` | AI chat sites (8) | where Outis is active; listed sites are also treated as "Enter sends" |
 | `allSites` | false | protect every website |
 | `autoMode` | true | one-Enter automatic mode |
 | `autoSend` | false | send automatically when the safe text is ready |
@@ -354,7 +354,7 @@ Popup → **Copy diagnostics**. Each line is JSON. Important steps:
 | `bar`, `bar-visible`, `panel-visible` | UI shown; really on screen? (`attached`, `popoverOpen`, size, `opacity`, `onTop`) |
 | `script-retired` | an older copy switched itself off |
 
-Also check `chrome://extensions` → Nobody → **Errors** for warnings.
+Also check `chrome://extensions` → Outis → **Errors** for warnings.
 
 ---
 

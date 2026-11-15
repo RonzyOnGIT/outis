@@ -1,5 +1,6 @@
 import { ENTITY_LABELS, findPlaceholders, type Vault, type VaultEntry } from '@nobody/engine';
 import { BASE_CSS, createShadowHost, h } from './ui';
+import { CLOSED_EYE, icon } from '@/lib/brand';
 
 /**
  * Lets you read AI answers with real values — only on your screen.
@@ -30,10 +31,11 @@ interface Mark {
 
 const TIP_CSS =
   BASE_CSS +
-  `.tip { position: fixed; pointer-events: none; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-     box-shadow: var(--shadow); border-radius: 10px; padding: 7px 10px; max-width: 320px; }
-   .v { font-weight: 650; font-size: 13.5px; word-break: break-word; }
-   .m { color: var(--muted); font-size: 11.5px; margin-top: 2px; }`;
+  `.tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--paper); border-radius: 10px; padding: 9px 12px;
+     max-width: 340px; display: flex; gap: 9px; align-items: center; box-shadow: 0 10px 28px rgba(31,35,51,.28); font-size: 13.5px; }
+   .tip .eye-icon { width: 18px; height: 18px; color: #D9B27C; }
+   .v { font-weight: 600; word-break: break-word; }
+   .m { color: #C9CAD2; }`;
 
 export class PageRestorer {
   private observer: MutationObserver | null = null;
@@ -174,9 +176,10 @@ export class PageRestorer {
       root.append(box);
       this.tip = { host, box };
     }
+    this.tip.box.title = ENTITY_LABELS[hit.entry.type];
     this.tip.box.replaceChildren(
-      h('div', { class: 'v', text: hit.entry.value }),
-      h('div', { class: 'm', text: `${ENTITY_LABELS[hit.entry.type]} · visible only to you` }),
+      icon(CLOSED_EYE, 'eye-icon'),
+      h('span', {}, h('span', { class: 'v', text: hit.entry.value }), h('span', { class: 'm', text: '. Only you can see this.' })),
     );
     // Below the pointer, or above it when close to the bottom edge.
     const height = this.tip.box.offsetHeight || 48;
@@ -195,8 +198,9 @@ function injectHighlightStyle(): void {
   const style = document.createElement('style');
   style.id = 'nobody-highlight-style';
   style.textContent = [
-    `::highlight(${HL_PLACEHOLDER}) { background-color: rgba(139, 92, 246, 0.20); text-decoration: underline dotted rgba(124, 58, 237, 0.9); }`,
-    `::highlight(${HL_RESTORED}) { background-color: rgba(139, 92, 246, 0.20); }`,
+    // Sealed placeholders: seal background with a dotted bronze underline (Outis style sheet).
+    `::highlight(${HL_PLACEHOLDER}) { background-color: rgba(242, 232, 217, 0.95); text-decoration: underline dotted #8A5A26; }`,
+    `::highlight(${HL_RESTORED}) { background-color: rgba(242, 232, 217, 0.95); }`,
   ].join('\n');
   (document.head ?? document.documentElement).appendChild(style);
 }

@@ -59,7 +59,7 @@ export async function callEngine<T>(req: EngineRequest): Promise<T> {
         }
         return res.data;
       }
-      lastError = new Error('Nobody engine did not respond');
+      lastError = new Error('The Outis engine did not respond');
     } catch (e) {
       if (e instanceof EngineError || e instanceof DocumentError) throw e;
       lastError = e;

@@ -126,7 +126,7 @@ export class DocumentGuard {
 
   private async process(files: File[], destination: Destination): Promise<void> {
     if (this.options.busy()) {
-      this.bar.show('warn', 'New attachment held back', 'Finish or cancel the current Nobody review, then select these files again.');
+      this.bar.show('warn', 'New attachment held back', 'Finish or cancel the current Outis review, then select these files again.');
       return;
     }
     this.options.setBusy(true);

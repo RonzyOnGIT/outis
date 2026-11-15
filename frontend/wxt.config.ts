@@ -27,10 +27,10 @@ export default defineConfig({
     },
   },
   manifest: {
-    name: 'Nobody',
+    name: 'Outis',
     description:
-      'Hides names, emails, addresses, IDs and your writing style before you paste into AI chats, email or bug trackers. 100% local.',
-    // scripting: put Nobody into tabs that were already open when it was installed/updated.
+      'Hides names, emails, addresses, IDs and your writing style before anything you type or attach leaves the page. Runs entirely on your computer.',
+    // scripting: put Outis into tabs that were already open when it was installed/updated.
     permissions: ['storage', 'unlimitedStorage', 'offscreen', 'scripting'],
     // <all_urls>: lets the background inject into open tabs after an update and run edits through
     // the page's own editor API (main world). The content script already runs on all sites, so the
@@ -39,7 +39,7 @@ export default defineConfig({
     content_security_policy: {
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
     },
-    action: { default_title: 'Nobody' },
+    action: { default_title: 'Outis' },
     commands: {
       'scrub-field': {
         suggested_key: { default: 'Alt+Shift+N' },

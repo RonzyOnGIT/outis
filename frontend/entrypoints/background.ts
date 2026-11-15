@@ -1,4 +1,5 @@
 import { loadSettings, onSettingsChanged, purgeDeviceVaults } from '@/lib/settings';
+import { FONT_FILES } from '@/lib/brand';
 
 /**
  * Background service worker: tiny router.
@@ -48,6 +49,17 @@ export default defineBackground(() => {
       browser.tabs.sendMessage(msg.tabId, msg).catch(() => {});
     }
     if (msg?.type === 'openOptions') void browser.runtime.openOptionsPage();
+    if (msg?.type === 'fonts' && Array.isArray(msg.files)) {
+      // In-page UI fonts, read from the extension package (see content/ui.ts).
+      const allowed = new Set(FONT_FILES.map((f) => f.file));
+      Promise.all((msg.files as unknown[]).filter((f): f is string => typeof f === 'string' && allowed.has(f)).map(async (file) => {
+        const bytes = new Uint8Array(await (await fetch(browser.runtime.getURL(`/fonts/${file}` as '/popup.html'))).arrayBuffer());
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        return [file, btoa(binary)] as const;
+      })).then((entries) => sendResponse(Object.fromEntries(entries)), () => sendResponse(null));
+      return true;
+    }
     return undefined;
   });
 

@@ -2,6 +2,7 @@ import type { Span } from '@nobody/engine';
 import { readField, type FieldText } from './fieldtext';
 import { captureContext, type InsertionContext } from './insert';
 import { BASE_CSS, createShadowHost, h } from './ui';
+import { CLOSED_EYE, icon } from '@/lib/brand';
 import { describeEditor, diag } from '@/lib/diag';
 
 /**
@@ -29,12 +30,11 @@ const HIGHLIGHT = 'nobody-typed';
 
 const BADGE_CSS =
   BASE_CSS +
-  `.badge { position: fixed; display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px 4px 8px; border-radius: 999px;
-     background: var(--bg); color: var(--fg); border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(17,24,39,.16);
-     font-size: 12px; font-weight: 600; cursor: pointer; animation: in .12s ease-out; white-space: nowrap; }
-   .badge:hover { border-color: #7c3aed; }
-   .dot { width: 8px; height: 8px; border-radius: 50%; background: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.18); }
-   .hint { color: var(--muted); font-weight: 500; }
+  `.badge { position: fixed; display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 9px; border-radius: 16px;
+     background: #F6EFE4; color: var(--ink); border: 1px solid #E4D3BA; box-shadow: 0 4px 14px rgba(31,35,51,.12);
+     font-size: 12.5px; font-weight: 600; cursor: pointer; animation: in .12s ease-out; white-space: nowrap; }
+   .badge:hover, .badge:focus-visible { border-color: var(--bronze); outline: none; }
+   .badge .eye-icon { width: 18px; height: 18px; }
    @keyframes in { from { opacity: 0; transform: translateY(3px); } }`;
 
 export class TypingGuard {
@@ -203,12 +203,9 @@ export class TypingGuard {
       this.badge = { host, el };
     }
     const n = spans.length;
-    this.badge.el.replaceChildren(
-      h('span', { class: 'dot' }),
-      `${n} personal item${n === 1 ? '' : 's'}`,
-      h('span', { class: 'hint', text: '· Review' }),
-    );
-    this.badge.el.title = 'Nobody found personal info in this box. Click to review — nothing leaves your device.';
+    this.badge.el.replaceChildren(icon(CLOSED_EYE, 'eye-icon'), `${n} to hide`);
+    this.badge.el.setAttribute('aria-label', `${n} personal ${n === 1 ? 'detail' : 'details'} to hide. Review them`);
+    this.badge.el.title = 'Outis found personal details in this box. Click to review them; nothing has left this page.';
     this.placeBadge();
   }
 
@@ -284,6 +281,7 @@ function injectStyle(): void {
   if (document.getElementById('nobody-typed-style')) return;
   const style = document.createElement('style');
   style.id = 'nobody-typed-style';
-  style.textContent = `::highlight(${HIGHLIGHT}) { text-decoration: underline wavy rgba(124, 58, 237, 0.95); text-decoration-thickness: 1.5px; background-color: rgba(139, 92, 246, 0.12); }`;
+  // Detected text: seal background, dotted bronze underline (Outis style sheet).
+  style.textContent = `::highlight(${HIGHLIGHT}) { background-color: rgba(242, 232, 217, 0.9); text-decoration: underline dotted #8A5A26; text-decoration-thickness: 1.5px; }`;
   (document.head ?? document.documentElement).appendChild(style);
 }

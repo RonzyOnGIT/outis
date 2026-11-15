@@ -1,7 +1,7 @@
 {
   "name": "outis",
   "private": true,
-  "description": "Nobody: hides personal info and writing style before you paste into AI chats. Fully local.",
+  "description": "Outis: hides personal info and writing style before you paste into AI chats. Fully local.",
   "workspaces": ["backend", "frontend"],
   "scripts": {
     "build": "npm run build -w backend && npm run build -w frontend",

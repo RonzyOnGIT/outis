@@ -1,6 +1,6 @@
 # @nobody/engine (`backend/`)
 
-The local privacy engine behind Nobody. It runs in the browser (offscreen document, worker) or in Node, with no server.
+The local privacy engine behind Outis. It runs in the browser (offscreen document, worker) or in Node, with no server.
 
 1. **Detect.** Presidio-style pattern rules with checksums and context words find emails, phones, cards (Luhn), IBANs (mod-97), IPs, secrets/API keys, IDs, birth dates, street addresses and usernames in file paths. A local NER model (`Xenova/bert-base-NER-uncased`, int8, 110 MB, WebAssembly on the CPU) finds people, organisations and places, including lowercase names typed in chats. The user's always-hide / never-hide lists are applied on top. Overlaps are resolved by rank, and repeated mentions are propagated.
 2. **Pseudonymize.** A `Vault` maps values to stable placeholders (`[PERSON_1]`, `[EMAIL_1]` …). "John", "John Smith" and "Smith" share a placeholder. `restore()` puts real values back into AI answers, including the variants models echo (`\[PERSON_1\]`, `PERSON_1`, `[Person 1]`).

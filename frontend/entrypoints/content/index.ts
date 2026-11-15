@@ -75,7 +75,7 @@ export default defineContentScript({
         if (newest && isSiteEnabled(settings, site)) {
           setTimeout(() => {
             if (document.documentElement.getAttribute('data-nobody-instance') !== instance) return; // a new copy arrived
-            new TopBar().show('warn', 'Nobody was updated — reload this page to stay protected', 'Press ⌘R / Ctrl+R. Until then, text here is not checked.');
+            new TopBar().show('warn', 'Outis was updated. Reload this page to stay protected', 'Press ⌘R / Ctrl+R. Until then, text here is not checked.');
           }, 1500);
         }
       }
@@ -168,16 +168,16 @@ export default defineContentScript({
         const step = s.progressText || 'Starting the local AI model';
         bar.show(
           'loading',
-          s.queued ? `Rewriting… your text will be ${verb}d when ready` : 'Rewriting your message…',
+          s.queued ? `Rewriting on this device. Your text will be ${verb}d when ready` : 'Rewriting your message on this device…',
           s.queued ? `${step} · Esc to cancel` : step,
           progressFrom(s.progressText),
         );
       } else if (s.warn) {
-        bar.show('warn', 'Ready — the AI kept the meaning only in parts', `Those parts use Light style. Press Enter to ${verb}.`);
+        bar.show('warn', 'Ready. Some sentences use Light rules', `They failed the meaning check. Press Enter to ${verb}.`);
       } else if (s.ready) {
-        bar.show('ready', 'Ready — rewritten text is ready', `Press Enter to ${verb} it`);
+        bar.show('ready', 'Rewritten and checked', `Press Enter to ${verb} it`);
       } else {
-        bar.show('ready', 'Ready — safe text is ready', `Personal info hidden${s.style === 'light' ? ', style cleaned up' : ''}. Press Enter to ${verb}.`);
+        bar.show('ready', 'Disguised text is ready', `Personal details hidden${s.style === 'light' ? ', habits removed' : ''}. Press Enter to ${verb}.`);
       }
     }
 
@@ -198,10 +198,10 @@ export default defineContentScript({
         if (opts.mode === 'field' && e.isTrusted && e.target instanceof Node && ctx.el.contains(e.target)) panel.dismiss();
       };
       window.addEventListener('input', onTyping, true);
-      bar.show('loading', 'Checking your message…', 'Looking for personal info on this device');
+      bar.show('loading', 'Checking your message…', 'Looking for personal details on this device');
       diag('review-start', { mode: opts.mode, chars: text.length, editor: describeEditor(ctx.el), kind: ctx.kind, aiDefault: settings.defaultStyle });
       const slow = setTimeout(() => panel.showLoading('Loading the name detector (first run only)…'), 1200);
-      panel.showLoading('Checking for personal info…');
+      panel.showLoading('Checking for personal details…');
       try {
         const { spans, nerUsed } = opts.spans ? { spans: opts.spans, nerUsed: true } : await detect(text);
         clearTimeout(slow);
@@ -211,7 +211,7 @@ export default defineContentScript({
           panel.close();
           if (opts.mode === 'paste') await insertText(ctx, text);
           else refocus(ctx);
-          toast('Nobody: no personal info found');
+          toast('No personal details found');
           return 'kept';
         }
 
@@ -228,6 +228,7 @@ export default defineContentScript({
           nerUsed,
           mode: opts.mode,
           note: opts.note,
+          restoreHint: settings.restoreMode !== 'off',
           onState: (s: PanelState) => showPanelState(s, opts.mode),
           rewrite: async (anonymized, report) => {
             const requestId = newRequestId();
@@ -252,13 +253,13 @@ export default defineContentScript({
           if (opts.mode === 'field') ok = await replaceAll(ctx, result.text);
           else await insertText(ctx, result.text);
           if (ok) {
-            bar.show('ready', '✓ Done — safe text is in the box', opts.mode === 'field' ? 'Press Enter to send' : 'Review it and send when ready', undefined, 4000);
+            bar.show('ready', 'Disguised text is in the box', opts.mode === 'field' ? 'Press Enter to send' : 'Review it and send when ready', undefined, 4000);
           } else {
             const copied = await navigator.clipboard.writeText(result.text).then(() => true, () => false);
             bar.show(
               'warn',
               'Couldn’t replace the text automatically',
-              copied ? 'The safe text is on your clipboard: click the box, press ⌘A / Ctrl+A, then paste.' : 'Please try again, or use Alt+Shift+N.',
+              copied ? 'The disguised text is on your clipboard: click the box, press ⌘A / Ctrl+A, then paste.' : 'Please try again, or use Alt+Shift+N.',
             );
           }
           return 'replaced';
@@ -276,7 +277,7 @@ export default defineContentScript({
         bar.hide();
         panel.close();
         console.error('[Nobody]', e);
-        toast('Nobody hit an error — nothing was changed');
+        toast('Outis hit an error. Nothing was changed.');
         refocus(ctx);
         return 'cancelled';
       } finally {
@@ -312,12 +313,12 @@ export default defineContentScript({
           if (mode === 'field' && !sendQueued) {
             sendQueued = true;
             diag('auto-send-queued', {});
-            bar.show('loading', 'Making your message safe…', 'Will send as soon as it’s ready · Esc to undo');
+            bar.show('loading', 'Disguising your message…', 'Will send as soon as it’s ready · Esc to undo');
           }
         }
       };
       window.addEventListener('keydown', onKey, true);
-      bar.show('loading', 'Making your message safe…', working);
+      bar.show('loading', 'Disguising your message…', working);
       diag('auto-start', { mode, chars: text.length, style: settings.defaultStyle, editor: describeEditor(ctx.el) });
 
       const restoreOriginal = async () => {
@@ -337,7 +338,7 @@ export default defineContentScript({
           // Nothing to hide or restyle: put it back as it was.
           if (mode === 'field') await replaceAll(ctx, text);
           else await insertText(ctx, text);
-          bar.show('ready', 'No personal info found', undefined, undefined, 2000);
+          bar.show('ready', 'No personal details found', undefined, undefined, 2000);
           return 'kept';
         }
 
@@ -403,17 +404,17 @@ export default defineContentScript({
 
         if (!ok) {
           const copied = await navigator.clipboard.writeText(final).then(() => true, () => false);
-          bar.show('warn', 'Couldn’t put the safe text in the box', copied ? 'It is on your clipboard: click the box, press ⌘A / Ctrl+A, then paste.' : 'Please try again.');
+          bar.show('warn', 'Couldn’t put the disguised text in the box', copied ? 'It is on your clipboard: click the box, press ⌘A / Ctrl+A, then paste.' : 'Please try again.');
           return 'replaced';
         }
         if ((settings.autoSend || sendQueued) && mode === 'field') {
-          bar.show('ready', '✓ Safe text ready — sending', partial ? 'Some parts use Light style' : undefined, undefined, 3000);
+          bar.show('ready', 'Disguised. Sending', partial ? 'Some sentences use Light rules' : undefined, undefined, 3000);
           await new Promise((r) => setTimeout(r, 150));
           resendKey(liveContext(ctx).el, { ctrlKey: false, metaKey: false, altKey: false });
         } else {
           bar.show(
             partial ? 'warn' : 'ready',
-            partial ? 'Ready — the AI kept the meaning only in parts (those use Light style)' : '✓ Ready — safe text is in the box',
+            partial ? 'Ready. Some sentences use Light rules (they failed the meaning check)' : 'Disguised text is in the box',
             mode === 'field' ? 'Check it, then press Enter to send' : 'Check it before sending',
             undefined,
             6000,
@@ -433,7 +434,7 @@ export default defineContentScript({
         console.error('[Nobody]', e);
         diag('auto-error', { error: String(e).slice(0, 160) });
         await restoreOriginal().catch(() => {});
-        bar.show('warn', 'Nobody hit an error — your original text is back', 'Nothing was sent.');
+        bar.show('warn', 'Outis hit an error. Your original text is back.', 'Nothing was sent.');
         return 'cancelled';
       } finally {
         window.removeEventListener('keydown', onKey, true);
@@ -484,7 +485,7 @@ export default defineContentScript({
       // fingerprint), not only messages with personal info. Very short messages are left alone.
       wantsRestyle: (text) => {
         if (!settings.autoMode || settings.defaultStyle === 'off' || !text.trim()) return false;
-        if (lastPutIn && text.trim() === lastPutIn.trim()) return false; // Nobody's own output, send as is
+        if (lastPutIn && text.trim() === lastPutIn.trim()) return false; // Outis's own output, send as is
         if (settings.defaultStyle === 'light') return neutralizeLight(text) !== text;
         // Short messages without personal info say little about how you write — send them untouched.
         const words = (text.match(/\p{L}+/gu) ?? []).length;

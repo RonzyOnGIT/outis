@@ -8,7 +8,8 @@ import {
   type Vault,
 } from '@nobody/engine';
 import type { StyleMode } from '@/lib/settings';
-import { BASE_CSS, createShadowHost, h, reportVisibility, typeGroup } from './ui';
+import { BASE_CSS, createShadowHost, h, reportVisibility } from './ui';
+import { CHECK, chipName, CLOSED_EYE, CROSS, icon, weave } from '@/lib/brand';
 
 export interface PanelInit {
   original: string;
@@ -23,6 +24,8 @@ export interface PanelInit {
   mode?: 'paste' | 'field';
   /** Shown under the title, e.g. why the panel opened. */
   note?: string;
+  /** Real values are shown back in answers (restore mode is not off). */
+  restoreHint?: boolean;
   /** Called whenever the panel's state changes (drives the top status bar). */
   onState?: (s: PanelState) => void;
 }
@@ -41,8 +44,8 @@ export interface PanelState {
 }
 
 const LABELS = {
-  paste: { primary: 'Paste safely', later: 'Paste when rewritten', waiting: 'Will paste when ready…', secondary: 'Paste original', secondaryTip: 'Paste exactly what you copied' },
-  field: { primary: 'Replace with safe text', later: 'Replace when rewritten', waiting: 'Will replace when ready…', secondary: 'Keep my text', secondaryTip: 'Leave the box as it is' },
+  paste: { primary: 'Paste disguised', waiting: 'Will paste when rewritten…', secondary: 'Cancel', exposed: 'Paste original', exposedTip: 'Paste exactly what you copied, with your real details' },
+  field: { primary: 'Replace with disguised text', waiting: 'Will replace when rewritten…', secondary: 'Keep editing', exposed: 'Allow as typed', exposedTip: 'Leave the box as it is; your real details can be sent' },
 };
 
 export type PanelResult =
@@ -50,63 +53,56 @@ export type PanelResult =
   | { action: 'original' }
   | { action: 'cancel' };
 
+/** Values that read best in monospace (as in the Outis style sheet). */
+const MONO_TYPES = new Set(['EMAIL', 'PHONE', 'CARD', 'IBAN', 'IP', 'URL', 'SECRET', 'ID', 'USER', 'DATE']);
+
 const CSS =
   BASE_CSS +
   `
-.nb { position: fixed; width: min(500px, calc(100vw - 32px)); background: var(--bg); border: 1px solid var(--line);
-  border-radius: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden;
-  animation: pop .14s ease-out; }
-@keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
-.head { display: flex; align-items: center; gap: 10px; padding: 12px 14px 10px; border-bottom: 1px solid var(--line); }
-.logo { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(160deg,#7c3aed,#5b21b6); position: relative; flex: none; }
-.logo::before { content: ''; position: absolute; left: 5px; right: 5px; top: 9px; height: 5px; border-radius: 2px; background: #111827; }
-.logo::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: 4px; height: 6px; border-radius: 6px 6px 2px 2px; background: #fff; }
-.title { font-weight: 650; font-size: 14px; }
-.sub { color: var(--muted); font-size: 12px; }
-.x { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; padding: 4px 6px; border-radius: 6px; }
-.x:hover { background: var(--soft); color: var(--fg); }
-.body { overflow: auto; padding: 4px 14px 2px; flex: 1 1 auto; min-height: 0; }
-.controls { flex: none; padding: 0 14px; border-top: 1px solid var(--line); }
-.label { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 4px; font-size: 11px;
-  font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
-.label .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
-.text { white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow: auto; padding: 8px 10px;
-  border: 1px solid var(--line); border-radius: 9px; font-size: 12.5px; }
-.preview { max-height: 170px; background: var(--soft); }
-mark { border-radius: 4px; padding: 0 2px; cursor: pointer; color: inherit; }
-mark.who { background: var(--who); color: var(--who-fg); }
-mark.where { background: var(--where); color: var(--where-fg); }
-mark.contact { background: var(--contact); color: var(--contact-fg); }
-mark.secret { background: var(--secret); color: var(--secret-fg); }
-mark.kept { background: transparent; color: inherit; text-decoration: line-through dotted; opacity: .75; }
-mark:hover { outline: 1.5px solid currentColor; }
-.ph { background: var(--ph); color: var(--ph-fg); border-radius: 4px; padding: 0 3px; font-weight: 600; font-size: 12px; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.chip { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; }
-.chip.who { background: var(--who); color: var(--who-fg); } .chip.where { background: var(--where); color: var(--where-fg); }
-.chip.contact { background: var(--contact); color: var(--contact-fg); } .chip.secret { background: var(--secret); color: var(--secret-fg); }
-.row { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; }
-.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; padding: 2px; gap: 2px; }
-.seg button { border: 0; background: transparent; color: var(--muted); padding: 5px 10px; border-radius: 7px; font-size: 12.5px; }
-.seg button.on { background: var(--accent); color: var(--accent-fg); }
+.nb.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); background: var(--ivory); border-left: 1px solid var(--line);
+  box-shadow: -18px 0 44px rgba(31,35,51,.12); display: flex; flex-direction: column; animation: slide .16s ease-out; }
+@keyframes slide { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .nb.drawer { animation: none; } }
+.head { display: flex; align-items: flex-start; gap: 12px; padding: 22px 20px 14px; }
+.head .eye-icon { width: 30px; height: 30px; margin-top: 2px; }
+.title { font: 500 23px/1.15 var(--serif); }
+.sub { color: var(--quiet); font-size: 13px; margin-top: 2px; }
+.x { margin-left: auto; border: 0; background: transparent; color: var(--quiet); width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; padding: 0; flex: none; }
+.x:hover { background: var(--track); color: var(--ink); }
+.x svg { width: 14px; height: 14px; }
+.body { overflow: auto; padding: 0 20px 12px; flex: 1 1 auto; min-height: 0; }
+.label { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-weight: 600; font-size: 13.5px; margin: 16px 0 8px; }
+.label .hint { font-weight: 400; color: var(--quiet); font-size: 12.5px; }
+.items { display: flex; flex-direction: column; }
+.item { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.item:last-child { border-bottom: 0; }
+.item input { width: 17px; height: 17px; margin: 0; accent-color: var(--ink); cursor: pointer; }
+.value { font-weight: 500; overflow-wrap: anywhere; }
+.value.mono { font: 500 13px/1.4 var(--mono); }
+.kind { color: var(--quiet); font-size: 12px; }
+.tick { color: var(--quiet); font-size: 12.5px; white-space: nowrap; }
+.voice { display: flex; flex-direction: column; gap: 8px; }
+.seg { display: flex; background: var(--track); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button { flex: 1; border: 0; background: transparent; color: var(--quiet); padding: 6px 8px; border-radius: 8px; font-size: 12.5px; font-weight: 500; }
+.seg button.on { background: var(--paper); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(31,35,51,.12); }
 .seg button:disabled { opacity: .45; cursor: not-allowed; }
-.status { font-size: 12px; color: var(--muted); min-height: 18px; margin: 4px 0 2px; display: flex; gap: 6px; align-items: center; }
-.status.warn { color: #b45309; }
-.status.ready { color: var(--accent); font-weight: 600; background: var(--soft); border-radius: 8px; padding: 6px 8px; animation: pop .2s ease-out; }
-.btn.primary.pulse { animation: pulse 1.2s ease-out 2; }
-@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(124,58,237,.55); } 100% { box-shadow: 0 0 0 10px rgba(124,58,237,0); } }
-.spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.foot { display: flex; gap: 8px; align-items: center; padding: 8px 14px 12px; flex: none; }
-.btn { border: 1px solid var(--line); background: var(--bg); color: var(--fg); padding: 7px 12px; border-radius: 9px; font-size: 13px; }
-.btn:hover { background: var(--soft); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; margin-left: auto; }
-.btn.primary:hover { filter: brightness(1.08); }
-.btn.primary:disabled { opacity: .55; cursor: progress; }
-.btn.link { border: 0; background: transparent; color: var(--muted); padding: 7px 4px; }
-.btn.link:hover { color: var(--fg); background: transparent; text-decoration: underline; }
-kbd { font: 11px ui-monospace, monospace; opacity: .8; margin-left: 6px; }
-.loading { padding: 18px 16px; display: flex; gap: 10px; align-items: center; }
+.note { color: var(--quiet); font-size: 12.5px; display: flex; gap: 8px; align-items: center; }
+.preview { white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; padding: 12px 14px; background: var(--paper);
+  border: 1px solid var(--line); border-radius: 12px; font-size: 13.5px; line-height: 1.85; }
+.checks { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--quiet); }
+.checks li { display: flex; gap: 8px; align-items: center; }
+.checks svg { width: 14px; height: 14px; color: var(--bronze); flex: none; }
+.notice { background: var(--notice); border: 1px solid var(--notice-line); border-radius: 10px; padding: 9px 12px; font-size: 12.5px; margin-top: 12px; }
+.foot { flex: none; padding: 14px 20px 18px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.buttons { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.buttons .primary { flex: 1; padding: 12px 14px; }
+.buttons .primary.pulse { animation: pulse 1.2s ease-out 2; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(138,90,38,.45); } 100% { box-shadow: 0 0 0 10px rgba(138,90,38,0); } }
+.buttons .btn:not(.primary):not(.text) { padding: 12px 14px; }
+.fine { color: var(--quiet); font-size: 12px; display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.fine .btn.text { white-space: nowrap; padding: 0; }
+kbd { font: 11px var(--mono); opacity: .75; margin-left: 6px; }
+.loading { padding: 4px 20px; display: flex; flex-direction: column; gap: 10px; color: var(--quiet); }
 `;
 
 export class ReviewPanel {
@@ -124,20 +120,24 @@ export class ReviewPanel {
   private rewriting: string | null = null;
   private progressText = '';
   private preview = '';
+  /** "TYPE:value" → placeholder it becomes in the current preview. */
+  private placeholders = new Map<string, string>();
   private status: { text: string; warn?: boolean; busy?: boolean; ready?: boolean } = { text: '' };
   private rewriteStarted = 0;
   /** User already pressed Enter while the AI rewrite was running — finish as soon as it's ready. */
   private queued = false;
   private ticker: ReturnType<typeof setInterval> | undefined;
 
-  constructor(private anchor: HTMLElement) {
+  /** `_anchor`: the text box being checked (the panel is a side panel, so it is not positioned against it). */
+  constructor(_anchor: HTMLElement) {
     ({ host: this.host, root: this.root } = createShadowHost('nobody-root', CSS));
-    this.card = h('div', { class: 'nb', attrs: { role: 'dialog', 'aria-label': 'Nobody privacy check' } });
+    this.card = h('div', { class: 'nb drawer', attrs: { role: 'dialog', 'aria-label': 'Outis: before you send' } });
     this.root.append(this.card);
     // Keep focus (and the cursor) in the page's text box: clicking the panel must not blur it,
     // or chat apps re-run their own focus logic and move the cursor. Enter/Esc work via onKey.
-    this.card.addEventListener('mousedown', (e) => e.preventDefault());
-    this.position();
+    this.card.addEventListener('mousedown', (e) => {
+      if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
+    });
     window.addEventListener('keydown', this.keyHandler, true);
   }
 
@@ -147,7 +147,14 @@ export class ReviewPanel {
   }
 
   showLoading(message: string): void {
-    this.card.replaceChildren(h('div', { class: 'loading' }, h('div', { class: 'spin' }), h('span', { text: message })));
+    this.card.replaceChildren(this.header('Before you send', 'Nothing has left this page yet.'),
+      h('div', { class: 'loading' }, h('span', { text: message }), icon(weave(true))));
+  }
+
+  private header(title: string, sub: string): HTMLElement {
+    return h('div', { class: 'head' }, icon(CLOSED_EYE, 'eye-icon'),
+      h('div', {}, h('div', { class: 'title', text: title }), h('div', { class: 'sub', text: sub })),
+      h('button', { class: 'x', title: 'Close (Esc)', attrs: { 'aria-label': 'Close' }, on: { click: () => this.finish({ action: 'cancel' }) } }, icon(CROSS)));
   }
 
   review(init: PanelInit): Promise<PanelResult> {
@@ -172,53 +179,35 @@ export class ReviewPanel {
     r?.(result);
   }
 
-  private position(): void {
-    const rect = this.anchor.getBoundingClientRect();
-    const width = Math.min(500, innerWidth - 32);
-    const left = Math.min(Math.max(16, rect.left + rect.width / 2 - width / 2), innerWidth - width - 16);
-    this.card.style.left = `${left}px`;
-    const above = rect.top - 26;
-    const below = innerHeight - rect.bottom - 26;
-    const NEEDED = 460; // enough for both texts, the style row, the status and the buttons
-    if (above >= NEEDED) {
-      this.card.style.bottom = `${Math.max(16, innerHeight - rect.top + 10)}px`;
-      this.card.style.maxHeight = `${above}px`;
-    } else if (below >= NEEDED) {
-      this.card.style.top = `${rect.bottom + 10}px`;
-      this.card.style.maxHeight = `${below}px`;
-    } else {
-      // Not enough room next to the box: float over the page (the box is not being edited meanwhile).
-      this.card.style.top = '16px';
-      this.card.style.maxHeight = `${innerHeight - 32}px`;
-    }
-  }
-
   private activeSpans(): Span[] {
     return this.init.spans.filter((_, i) => this.enabled[i]);
   }
 
   /** Recompute what will be pasted; kicks off an AI rewrite when needed. */
   private compute(): void {
-    const anon = anonymize(this.init.original, this.activeSpans(), this.init.vault.clone()).text;
+    const result = anonymize(this.init.original, this.activeSpans(), this.init.vault.clone());
+    const anon = result.text;
+    this.placeholders = new Map(result.replacements.map((r) => [`${r.span.type}:${r.span.text}`, r.placeholder]));
     this.status = { text: '' };
     if (this.style === 'off') {
       this.preview = anon;
+      this.status = { text: 'Your wording stays as written. Only personal details are replaced.' };
     } else if (this.style === 'light') {
       this.preview = neutralizeLight(anon);
-      this.status = { text: 'Light: one plain voice — punctuation, fillers, slang, contractions and formal words normalized.' };
+      this.status = { text: 'Light rules removed the strongest habits: punctuation, fillers, slang and shorthand.' };
     } else {
       const cached = this.rewriteCache.get(anon);
       if (cached) {
         this.preview = cached.text;
         this.status = cached.rewritten
-          ? { text: `✨ Rewritten text is ready (${this.init.ai.modelName}, ${(cached.ms / 1000).toFixed(1)} s)`, ready: true }
-          : { text: 'AI rewrite changed the meaning in places — those parts use Light style instead.', warn: true };
+          ? { text: `Rewritten on this device by ${this.init.ai.modelName} in ${(cached.ms / 1000).toFixed(1)} s.`, ready: true }
+          : { text: 'Some sentences failed the meaning check, so they use Light rules.', warn: true };
       } else {
         // Don't make the user wait: show the Light version now, swap in the rewrite when it's ready.
         this.preview = neutralizeLight(anon);
         const secs = this.rewriteStarted ? Math.round((Date.now() - this.rewriteStarted) / 1000) : 0;
-        const what = this.progressText || `Rewriting with ${this.init.ai.modelName}`;
-        this.status = { text: `${what} · ${secs}s`, busy: true };
+        const what = this.progressText || `Rewriting on this device with ${this.init.ai.modelName}`;
+        this.status = { text: `${what} · ${secs}s. Light rules shown until then.`, busy: true };
         if (this.rewriting !== anon) this.startRewrite(anon);
       }
     }
@@ -266,59 +255,47 @@ export class ReviewPanel {
       style: this.style,
       progressText: this.progressText,
     });
-    const { original, spans, ai, nerUsed } = this.init;
-    const hiddenCount = this.enabled.filter(Boolean).length;
+    const { spans, ai, nerUsed } = this.init;
     const busy = Boolean(this.status.busy);
     const labels = LABELS[this.init.mode ?? 'paste'];
 
-    // --- original text with clickable highlights ---
-    const orig = h('div', { class: 'text' });
-    let cursor = 0;
+    // --- Each detected detail once, with the placeholder it becomes (repeats share a checkbox) ---
+    const groups = new Map<string, number[]>();
     spans.forEach((s, i) => {
-      orig.append(original.slice(cursor, s.start));
-      const on = this.enabled[i];
-      orig.append(
-        h('mark', {
-          class: `${typeGroup(s.type)}${on ? '' : ' kept'}`,
-          text: original.slice(s.start, s.end),
-          title: `${ENTITY_LABELS[s.type]} · click to ${on ? 'keep visible' : 'hide again'}`,
-          on: {
-            click: () => {
-              this.enabled[i] = !this.enabled[i];
-              this.render();
-            },
-          },
-        }),
-      );
-      cursor = s.end;
+      const key = `${s.type}:${s.text}`;
+      groups.set(key, [...(groups.get(key) ?? []), i]);
     });
-    orig.append(original.slice(cursor));
+    const items = h('div', { class: 'items' });
+    for (const [key, indexes] of groups) {
+      const s = spans[indexes[0]!]!;
+      const on = indexes.every((i) => this.enabled[i]);
+      const box = h('input', { attrs: { type: 'checkbox', 'aria-label': `Hide ${s.text}` } });
+      box.checked = on;
+      box.addEventListener('change', () => {
+        for (const i of indexes) this.enabled[i] = box.checked;
+        this.render();
+      });
+      const placeholder = this.placeholders.get(key);
+      items.append(h('label', { class: 'item' }, box,
+        h('div', {}, h('div', { class: `value${MONO_TYPES.has(s.type) ? ' mono' : ''}`, text: s.text }),
+          h('div', { class: 'kind', text: ENTITY_LABELS[s.type] + (indexes.length > 1 ? ` · ${indexes.length} times` : '') })),
+        on && placeholder ? h('span', { class: 'chip', text: chipName(placeholder), title: `Sent as ${placeholder}` }) : h('span', { class: 'tick', text: 'Tick to hide' })));
+    }
 
-    // --- preview with placeholders highlighted ---
-    const prev = h('div', { class: 'text preview' });
-    cursor = 0;
+    // --- What the site receives, placeholders drawn as chips ---
+    const prev = h('div', { class: 'preview', attrs: { 'aria-label': 'What the AI will see' } });
+    let cursor = 0;
     for (const m of findPlaceholders(this.preview)) {
-      prev.append(this.preview.slice(cursor, m.start), h('span', { class: 'ph', text: this.preview.slice(m.start, m.end) }));
+      prev.append(this.preview.slice(cursor, m.start), h('span', { class: 'chip', text: chipName(m.placeholder), title: `Sent as ${m.placeholder}` }));
       cursor = m.end;
     }
     prev.append(this.preview.slice(cursor));
 
-    // --- type summary chips ---
-    const counts = new Map<string, { n: number; group: string }>();
-    spans.forEach((s, i) => {
-      if (!this.enabled[i]) return;
-      const label = ENTITY_LABELS[s.type];
-      const c = counts.get(label) ?? { n: 0, group: typeGroup(s.type) };
-      c.n++;
-      counts.set(label, c);
-    });
-    const chips = h('div', { class: 'chips' }, ...[...counts].map(([label, c]) => h('span', { class: `chip ${c.group}`, text: `${label} × ${c.n}` })));
-
-    const seg = h('div', { class: 'seg', attrs: { role: 'radiogroup', 'aria-label': 'Writing style' } });
+    const seg = h('div', { class: 'seg', attrs: { role: 'radiogroup', 'aria-label': 'Writing voice' } });
     const modes: Array<[StyleMode, string, string]> = [
-      ['off', 'Off', 'Keep your wording, only hide personal info'],
-      ['light', 'Light', 'Instant cleanup of typos, slang, punctuation and emoji'],
-      ['ai', 'AI rewrite', ai.available ? `Rewrite with ${ai.modelName}, fully on this device` : 'Pick a model in Nobody settings to enable'],
+      ['off', 'Keep mine', 'Keep your wording, only hide personal details'],
+      ['light', 'Light', 'Instant rules: punctuation, fillers, slang, shorthand'],
+      ['ai', 'Full rewrite', ai.available ? `Rewrite with ${ai.modelName}, on this device` : 'Pick a model in Outis settings to enable'],
     ];
     for (const [mode, label, tip] of modes) {
       const b = h('button', {
@@ -326,73 +303,49 @@ export class ReviewPanel {
         text: label,
         title: tip,
         attrs: { role: 'radio', 'aria-checked': String(this.style === mode) },
-        on: {
-          click: () => {
-            this.style = mode;
-            this.queued = false;
-            this.render();
-          },
-        },
+        on: { click: () => { this.style = mode; this.queued = false; this.render(); } },
       });
       if (mode === 'ai' && !ai.available) b.disabled = true;
       seg.append(b);
     }
 
-    const primary = h(
-      'button',
-      { class: 'btn primary', on: { click: () => this.pasteClean() } },
-      busy ? (this.queued ? labels.waiting : labels.later) : this.status.ready ? `${labels.primary} (rewritten)` : labels.primary,
-      this.queued ? null : h('kbd', { text: '↵' }),
-    );
+    // Proof, not claims: only checks that actually ran for this text.
+    const hiddenCount = this.activeSpans().length;
+    const proof: string[] = [];
+    if (hiddenCount) proof.push(`${hiddenCount} personal ${hiddenCount === 1 ? 'detail' : 'details'} replaced on this device`);
+    if (this.style === 'off') proof.push('Your wording kept as written');
+    if (this.style === 'light' || busy) proof.push('Light rules never change facts or numbers');
+    if (this.style === 'ai' && this.status.ready) proof.push('Every number and placeholder kept', 'Meaning checked sentence by sentence');
+    const checks = h('ul', { class: 'checks' }, ...proof.map((text) => h('li', {}, icon(CHECK), text)));
+
+    const primary = h('button', { class: 'btn primary', on: { click: () => this.pasteClean() } },
+      this.queued ? labels.waiting : labels.primary, this.queued ? null : h('kbd', { text: '↵' }));
     if (this.queued) primary.disabled = true;
     if (this.status.ready) primary.classList.add('pulse');
     // While the rewrite runs, offer a way to skip it.
-    const skip = busy
-      ? h('button', { class: 'btn', text: 'Without rewrite', title: 'Use the Light version now', on: { click: () => this.finishClean() } })
-      : null;
+    const skip = busy ? h('button', { class: 'btn', text: 'Use Light rules now', title: 'Finish now with the Light version', on: { click: () => this.finishClean() } }) : null;
 
     this.card.replaceChildren(
-      h(
-        'div',
-        { class: 'head' },
-        h('div', { class: 'logo' }),
-        h(
-          'div',
-          {},
-          h('div', { class: 'title', text: spans.length ? `Hiding ${hiddenCount} of ${spans.length} personal item${spans.length === 1 ? '' : 's'}` : 'No personal info found' }),
-          h('div', {
-            class: 'sub',
-            text:
-              this.init.note ??
-              (nerUsed ? 'Checked on this device · nothing was sent anywhere' : 'Checked on this device (patterns only — name detector still loading)'),
-          }),
-        ),
-        h('button', { class: 'x', text: '×', title: 'Cancel (Esc)', on: { click: () => this.finish({ action: 'cancel' }) } }),
-      ),
-      h(
-        'div',
-        { class: 'body' },
-        spans.length ? h('div', { class: 'label' }, 'Your text', h('span', { class: 'hint', text: 'click a highlight to keep it' })) : null,
-        spans.length ? orig : null,
-        spans.length ? chips : null,
-        h('div', { class: 'label' }, 'What the site will see'),
+      this.header('Before you send', this.init.note ?? 'Nothing has left this page yet.'),
+      h('div', { class: 'body' },
+        spans.length
+          ? h('div', {}, h('div', { class: 'label' }, 'Hidden from the AI', h('span', { class: 'hint', text: 'Untick to keep a detail' })), items)
+          : h('div', { class: 'label', text: 'No personal details found' }),
+        nerUsed ? null : h('div', { class: 'notice', text: 'Name detection is still loading, so only patterns and your lists were checked. Look over names yourself.' }),
+        h('div', { class: 'voice' },
+          h('div', { class: 'label' }, 'Writing voice'),
+          seg,
+          this.style === 'off' ? null : icon(weave(busy)),
+          h('div', { class: 'note' }, this.status.text)),
+        this.status.warn ? h('div', { class: 'notice', text: 'Those sentences keep your meaning with Light rules instead of the model’s version.' }) : null,
+        h('div', { class: 'label', text: 'What the AI will see' }),
         prev,
-      ),
-      // Always visible (never scrolled away), so "rewrite is ready" can't be missed.
-      h(
-        'div',
-        { class: 'controls' },
-        h('div', { class: 'row' }, h('span', { class: 'sub', text: 'Writing style' }), seg),
-        h('div', { class: `status${this.status.warn ? ' warn' : ''}${this.status.ready ? ' ready' : ''}` }, busy ? h('div', { class: 'spin' }) : null, this.status.text),
-      ),
-      h(
-        'div',
-        { class: 'foot' },
-        h('button', { class: 'btn link', text: labels.secondary, title: labels.secondaryTip, on: { click: () => this.finish({ action: 'original' }) } }),
-        h('button', { class: 'btn', text: 'Cancel', on: { click: () => this.finish({ action: 'cancel' }) } }),
-        skip,
-        primary,
-      ),
+        checks),
+      h('div', { class: 'foot' },
+        h('div', { class: 'buttons' }, primary, skip ?? h('button', { class: 'btn', text: labels.secondary, on: { click: () => this.finish({ action: 'cancel' }) } })),
+        h('div', { class: 'fine' },
+          h('span', { text: this.init.restoreHint ? 'Your real details come back in the reply, on your screen only.' : 'Placeholders stay in the reply.' }),
+          h('button', { class: 'btn text exposed', text: labels.exposed, title: labels.exposedTip, on: { click: () => this.finish({ action: 'original' }) } }))),
     );
   }
 
@@ -431,11 +384,11 @@ export function toast(message: string, ms = 2600): void {
   const { host, root } = createShadowHost(
     'nobody-toast',
     BASE_CSS +
-      `.t { position: fixed; right: 20px; bottom: 20px; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-        box-shadow: var(--shadow); border-radius: 999px; padding: 8px 14px; font-size: 13px; display: flex; gap: 8px; align-items: center;
+      `.t { position: fixed; right: 20px; bottom: 20px; background: var(--paper); color: var(--ink); border: 1px solid var(--line);
+        box-shadow: var(--shadow); border-radius: 12px; padding: 10px 14px; font-size: 13px; display: flex; gap: 10px; align-items: center;
         animation: in .15s ease-out; } @keyframes in { from { opacity: 0; transform: translateY(6px); } }
-       .dot { width: 8px; height: 8px; border-radius: 50%; background: #7c3aed; }`,
+       .t .eye-icon { width: 20px; height: 20px; }`,
   );
-  root.append(h('div', { class: 'nb t' }, h('span', { class: 'dot' }), message));
+  root.append(h('div', { class: 'nb t', attrs: { role: 'status' } }, icon(CLOSED_EYE, 'eye-icon'), message));
   setTimeout(() => host.remove(), ms);
 }

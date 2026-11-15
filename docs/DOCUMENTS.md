@@ -21,10 +21,10 @@ stages; old, detached status-bar elements are no longer measured.
 
 ## User flow
 
-1. Enable Nobody for the site; **Protect attachments** is on by default and can be changed in the
+1. Enable Outis for the site; **Protect attachments** is on by default and can be changed in the
    popup or settings. Reload existing chat tabs after installing/updating this build.
 2. Select documents through a normal file input, drop them on the page, or paste clipboard files.
-   Nobody stops the original event and immediately clears file-input selections.
+   Outis stops the original event and immediately clears file-input selections.
 3. The offscreen page extracts text. Pattern/dictionary/NER detection and the selected Off, Light
    or AI style run locally. AI output goes through the existing meaning and privacy checks.
 4. A closed-shadow review window opens just above the page's message box (below it when the box is

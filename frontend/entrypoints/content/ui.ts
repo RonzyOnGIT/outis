@@ -1,5 +1,6 @@
 import type { EntityType } from '@nobody/engine';
 import { describeEditor, diag } from '@/lib/diag';
+import { FONT_FILES, THEME_VARS, WEAVE_CSS } from '@/lib/brand';
 
 export { h } from '@/lib/dom';
 
@@ -24,6 +25,7 @@ export function typeGroup(t: EntityType): 'who' | 'where' | 'contact' | 'secret'
 
 /** A closed shadow root: page scripts cannot read what we render (e.g. the original text). */
 export function createShadowHost(id: string, css: string): { host: HTMLElement; root: ShadowRoot } {
+  ensureFonts();
   document.getElementById(id)?.remove();
   const host = document.createElement('div');
   host.id = id;
@@ -75,24 +77,59 @@ export function showShadowHost(host: HTMLElement): void {
   }
 }
 
+/**
+ * Outis typefaces for the in-page UI. Fonts declared inside a shadow root are ignored, so they are
+ * added to the document's font set once, from bytes the background reads from the extension
+ * package (no web-accessible files, no network, and no page CSP involved). Latin subsets only;
+ * other scripts use the system fallback fonts.
+ */
+let fontsRequested = false;
+function ensureFonts(): void {
+  if (fontsRequested || typeof FontFace === 'undefined') return;
+  fontsRequested = true;
+  void (async () => {
+    try {
+      const files = FONT_FILES.filter((f) => f.latin);
+      const data = (await browser.runtime.sendMessage({ type: 'fonts', files: files.map((f) => f.file) })) as Record<string, string> | null;
+      for (const f of files) {
+        const b64 = data?.[f.file];
+        if (!b64) continue;
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const face = new FontFace(f.family, bytes, { weight: String(f.weight), unicodeRange: f.range, display: 'swap' });
+        document.fonts.add(await face.load());
+      }
+    } catch {
+      // The fallback stacks (Georgia, system UI, monospace) keep everything readable.
+    }
+  })();
+}
+
 export const BASE_CSS = `
 :host { all: initial; }
 :host > * { pointer-events: auto; }
 * { box-sizing: border-box; }
 .nb {
-  --bg: #ffffff; --fg: #111827; --muted: #6b7280; --line: #e5e7eb; --soft: #f5f3ff; --accent: #6d28d9; --accent-fg: #fff;
-  --who: #ede9fe; --who-fg: #5b21b6; --where: #ccfbf1; --where-fg: #115e59; --contact: #fef3c7; --contact-fg: #92400e;
-  --secret: #ffe4e6; --secret-fg: #9f1239; --ph: #ede9fe; --ph-fg: #5b21b6; --shadow: 0 20px 50px rgba(17,24,39,.22), 0 2px 8px rgba(17,24,39,.08);
-  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--fg);
-}
-@media (prefers-color-scheme: dark) {
-  .nb {
-    --bg: #18181b; --fg: #f4f4f5; --muted: #a1a1aa; --line: #2e2e33; --soft: #221b33; --accent: #8b5cf6; --accent-fg: #fff;
-    --who: #2e1f4d; --who-fg: #c4b5fd; --where: #12332f; --where-fg: #5eead4; --contact: #3a2a0c; --contact-fg: #fcd34d;
-    --secret: #3d1520; --secret-fg: #fda4af; --ph: #2e1f4d; --ph-fg: #c4b5fd; --shadow: 0 20px 50px rgba(0,0,0,.55);
-  }
+  ${THEME_VARS}
+  /* Older names used by some surfaces. */
+  --bg: var(--paper); --fg: var(--ink); --muted: var(--quiet); --soft: var(--seal); --accent: var(--ink); --accent-fg: var(--paper);
+  --ph: var(--seal); --ph-fg: var(--ink);
+  font: 13.5px/1.5 var(--sans); color: var(--ink); -webkit-font-smoothing: antialiased; text-align: left; letter-spacing: normal;
 }
 button { font: inherit; cursor: pointer; }
+.serif { font-family: var(--serif); font-weight: 500; }
+.btn { border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 9px 14px; border-radius: 9px; font-weight: 600; line-height: 1.25; }
+.btn:hover:not(:disabled) { border-color: #CDBFA8; }
+.btn.primary { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.btn.primary:hover:not(:disabled) { background: #2D3247; border-color: #2D3247; }
+.btn.text { border: 0; background: none; padding: 9px 4px; color: var(--bronze); text-decoration: underline; text-underline-offset: 3px; }
+.btn.text.exposed { color: var(--oxblood); }
+.btn:disabled { opacity: .55; cursor: default; }
+button:focus-visible { outline: 2px solid var(--bronze); outline-offset: 2px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; font: 500 12px/1.25 var(--mono); color: var(--ink); background: var(--seal);
+  border: 1px solid #E6D5BC; border-radius: 6px; padding: 1px 6px; white-space: nowrap; vertical-align: baseline; }
+.chip::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--bronze); box-shadow: 0 0 0 2px #E2C9A5; flex: none; }
+.eye-icon { width: 26px; height: 26px; color: var(--bronze); flex: none; }
+${WEAVE_CSS}
 `;
 
 /**
