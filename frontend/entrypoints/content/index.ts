@@ -28,6 +28,8 @@ import { progressFrom, TopBar } from './topbar';
 import { describeEditor, diag } from '@/lib/diag';
 import { PageRestorer } from './restore';
 import { resendKey, TypingGuard } from './typing';
+import { DocumentGuard } from './documents';
+import { DocumentError } from '@/lib/documents/types';
 
 type Outcome = 'replaced' | 'kept' | 'cancelled';
 
@@ -44,6 +46,7 @@ export default defineContentScript({
     // (browser.runtime disappears). A fresh copy is injected into the tab; this one must then do
     // nothing at all, so the two never both react to the same paste or Enter.
     const instance = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    let documents: DocumentGuard | undefined;
     document.documentElement.setAttribute('data-nobody-instance', instance);
     diag('script-start', { build: __NOBODY_BUILD__, instance, readyState: document.readyState });
     let retired = false;
@@ -63,6 +66,7 @@ export default defineContentScript({
           restorer.setMode('off');
           typing.reset();
           bar.hide();
+          documents?.cancel();
         } catch {
           /* not initialised yet — nothing to clean up */
         }
@@ -81,6 +85,7 @@ export default defineContentScript({
     let settings: Settings = DEFAULT_SETTINGS;
     let vault = new Vault();
     let busy = false;
+    let revision = 0;
     const bar = new TopBar();
     /** The last safe text Nobody put into the box — sent as is on the next Enter. */
     let lastPutIn = '';
@@ -90,7 +95,7 @@ export default defineContentScript({
     const restorer = new PageRestorer(() => (enabledHere() ? vault : null));
     const applyRestoreMode = () => restorer.setMode(enabledHere() ? settings.restoreMode : 'off');
 
-    void (async () => {
+    const ready = (async () => {
       settings = await loadSettings();
       // Ask the background to open RAM-only session storage to us before reading placeholder memory.
       await browser.runtime.sendMessage({ type: 'hello' }).catch(() => {});
@@ -101,6 +106,7 @@ export default defineContentScript({
     })();
 
     onSettingsChanged(async (s) => {
+      revision++;
       const memoryChanged = s.memory !== settings.memory;
       settings = s;
       if (memoryChanged) vault = new Vault(await loadVault(site, settings.memory));
@@ -108,6 +114,7 @@ export default defineContentScript({
       if (!enabledHere() || !settings.guardTyping) typing.reset();
     });
     onVaultChanged(site, (data) => {
+      revision++;
       vault = new Vault(data);
       restorer.refresh();
     });
@@ -133,6 +140,25 @@ export default defineContentScript({
         return { spans: quickCheck(text), nerUsed: false };
       }
     }
+
+    documents = new DocumentGuard({
+      enabled: () => enabledHere() && settings.guardDocuments,
+      alive,
+      ready,
+      busy: () => busy,
+      setBusy: (value) => { busy = value; },
+      snapshot: () => ({ settings, vault: vault.clone(), revision }),
+      revision: () => revision,
+      // Documents have one bounded model budget per selection and a visible fallback warning.
+      analyze: (text) => engine.analyze(text, detectOptions()),
+      commit: async (next, snapshot) => {
+        if (revision !== snapshot.revision || !enabledHere()) throw new DocumentError('changed');
+        const data = next.toJSON();
+        vault = new Vault(settings.memory === 'none' ? { ...data, entries: [] } : data);
+        await saveVault(site, data, settings.memory);
+        restorer.refresh();
+      },
+    });
 
     /** Top bar mirrors the panel: loading while rewriting, green when the safe text is ready. */
     function showPanelState(s: PanelState, mode: 'paste' | 'field'): void {

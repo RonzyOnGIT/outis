@@ -27,7 +27,6 @@ export function createShadowHost(id: string, css: string): { host: HTMLElement; 
   document.getElementById(id)?.remove();
   const host = document.createElement('div');
   host.id = id;
-  host.style.cssText = 'all: initial; position: fixed; z-index: 2147483647; inset: auto;';
   const root = host.attachShadow({ mode: 'closed' });
   // Constructed stylesheet: not subject to the page's Content-Security-Policy (a <style> tag can be
   // blocked by sites without 'unsafe-inline'). Falls back to <style> where unsupported.
@@ -40,20 +39,45 @@ export function createShadowHost(id: string, css: string): { host: HTMLElement; 
     style.textContent = css;
     root.append(style);
   }
-  document.documentElement.append(host);
+  showShadowHost(host);
+  return { host, root };
+}
+
+/**
+ * Page styles can target the shadow HOST (including [popover]) even though its contents are private.
+ * An open popover is not necessarily visible. Give it a real viewport-sized box, explicitly undo
+ * visibility/content-visibility rules, and keep the transparent wrapper out of pointer hit testing.
+ * Individual UI surfaces opt back into pointer events inside the shadow root.
+ */
+export function showShadowHost(host: HTMLElement): void {
+  const styles: Record<string, string> = {
+    position: 'fixed', inset: '0', width: '100vw', height: '100vh',
+    'min-width': '0', 'min-height': '0', 'max-width': 'none', 'max-height': 'none',
+    margin: '0', padding: '0', border: '0', display: 'block', visibility: 'visible', opacity: '1',
+    'content-visibility': 'visible', contain: 'none', overflow: 'visible',
+    'pointer-events': 'none', 'z-index': '2147483647', background: 'transparent',
+    transform: 'none', filter: 'none', 'clip-path': 'none', clip: 'auto',
+    animation: 'none', transition: 'none',
+  };
+  for (const [name, value] of Object.entries(styles)) {
+    if (host.style.getPropertyValue(name) !== value || host.style.getPropertyPriority(name) !== 'important') host.style.setProperty(name, value, 'important');
+  }
+  host.hidden = false;
+  host.inert = false;
+  if (!host.isConnected) document.documentElement.append(host);
   // Put it in the browser's top layer (Popover API): drawn above everything on the page, whatever
   // the site's own z-index, overflow or modal dialogs do. Falls back to a max z-index.
   try {
-    host.setAttribute('popover', 'manual');
-    host.showPopover();
+    if (host.getAttribute('popover') !== 'manual') host.setAttribute('popover', 'manual');
+    if (!host.matches(':popover-open')) host.showPopover();
   } catch {
     host.removeAttribute('popover');
   }
-  return { host, root };
 }
 
 export const BASE_CSS = `
 :host { all: initial; }
+:host > * { pointer-events: auto; }
 * { box-sizing: border-box; }
 .nb {
   --bg: #ffffff; --fg: #111827; --muted: #6b7280; --line: #e5e7eb; --soft: #f5f3ff; --accent: #6d28d9; --accent-fg: #fff;
@@ -77,8 +101,12 @@ button { font: inherit; cursor: pointer; }
  */
 export function reportVisibility(label: string, host: HTMLElement, el: HTMLElement): void {
   const measure = (when: string) => {
+    // The bar replaces its contents as progress changes. Do not diagnose a detached old element.
+    if (!el.isConnected) return;
     const r = el.getBoundingClientRect();
     const cs = getComputedStyle(el);
+    const hostStyle = getComputedStyle(host);
+    const hostRect = host.getBoundingClientRect();
     const top = r.width && r.height ? document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 20)) : null;
     let open: boolean | null = null;
     try {
@@ -97,6 +125,11 @@ export function reportVisibility(label: string, host: HTMLElement, el: HTMLEleme
       display: cs.display,
       visibility: cs.visibility,
       opacity: cs.opacity,
+      hostVisibility: hostStyle.visibility,
+      hostOpacity: hostStyle.opacity,
+      hostContentVisibility: hostStyle.contentVisibility,
+      hostW: Math.round(hostRect.width),
+      hostH: Math.round(hostRect.height),
       onTop: top === host ? 'nobody' : describeEditor(top),
       viewport: `${innerWidth}x${innerHeight}`,
     });

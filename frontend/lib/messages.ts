@@ -1,7 +1,9 @@
 import type { DetectOptions, RewriteResult, Span } from '@nobody/engine';
+import { DOCUMENT_ERRORS, DocumentError, type DocumentErrorCode, type DocumentFormat, type ExtractedDocument } from './documents/types';
 
 /** Requests handled by the offscreen document, where the models live. */
 export type EngineRequest =
+  | { type: 'document.extract'; format: DocumentFormat; base64: string }
   | { type: 'ner.init'; requestId?: string }
   | { type: 'analyze'; text: string; options: DetectOptions }
   | { type: 'rewrite'; text: string; modelId: string; requestId?: string; mode?: 'all' | 'auto' }
@@ -29,7 +31,7 @@ export interface StatusResponse {
   loadedModel: string | null;
 }
 
-export type EngineResponse<T> = { ok: true; data: T } | { ok: false; error: string };
+export type EngineResponse<T> = { ok: true; data: T } | { ok: false; error: string; documentCode?: DocumentErrorCode };
 
 export interface ProgressMessage {
   type: 'progress';
@@ -51,12 +53,15 @@ export async function callEngine<T>(req: EngineRequest): Promise<T> {
       await browser.runtime.sendMessage({ type: 'ensureOffscreen' });
       const res = (await browser.runtime.sendMessage({ target: 'offscreen', ...req })) as EngineResponse<T> | undefined;
       if (res) {
-        if (!res.ok) throw new EngineError(res.error);
+        if (!res.ok) {
+          if (res.documentCode && res.documentCode in DOCUMENT_ERRORS) throw new DocumentError(res.documentCode);
+          throw new EngineError(res.error);
+        }
         return res.data;
       }
       lastError = new Error('Nobody engine did not respond');
     } catch (e) {
-      if (e instanceof EngineError) throw e;
+      if (e instanceof EngineError || e instanceof DocumentError) throw e;
       lastError = e;
     }
     await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
@@ -68,6 +73,7 @@ export async function callEngine<T>(req: EngineRequest): Promise<T> {
 class EngineError extends Error {}
 
 export const engine = {
+  extractDocument: (format: DocumentFormat, base64: string) => callEngine<ExtractedDocument>({ type: 'document.extract', format, base64 }),
   analyze: (text: string, options: DetectOptions) => callEngine<AnalyzeResponse>({ type: 'analyze', text, options }),
   rewrite: (text: string, modelId: string, requestId?: string, mode?: 'all' | 'auto') =>
     callEngine<RewriteResult>({ type: 'rewrite', text, modelId, requestId, mode }),

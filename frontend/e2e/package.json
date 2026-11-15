@@ -4,6 +4,7 @@
   "type": "module",
   "description": "Developer browser tests: load the built extension in Playwright Chromium against local chat-box simulators.",
   "scripts": {
+    "test:documents": "node documents.mjs",
     "bundles": "esbuild pm-src.js --bundle --format=iife --outfile=pm-bundle.js && esbuild tt-src.js --bundle --format=iife --outfile=tt-bundle.js",
     "test:paste": "node e2e.mjs out",
     "test:typing": "node typing.mjs out",

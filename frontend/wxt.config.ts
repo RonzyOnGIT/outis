@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { defineConfig } from 'wxt';
 
@@ -16,6 +16,16 @@ function ortWasmPath(): string {
 export default defineConfig({
   // Visible folder (macOS hides ".output" in the Load-unpacked picker).
   outDir: 'dist',
+  hooks: {
+    'build:publicAssets': (_wxt, files) => {
+      const pdfDir = dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json'));
+      for (const folder of ['cmaps', 'standard_fonts']) {
+        for (const name of readdirSync(join(pdfDir, folder))) {
+          files.push({ absoluteSrc: join(pdfDir, folder, name), relativeDest: `pdf-assets/${folder}/${name}` });
+        }
+      }
+    },
+  },
   manifest: {
     name: 'Nobody',
     description:

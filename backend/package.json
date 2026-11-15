@@ -1,6 +1,6 @@
 {
   "name": "@nobody/engine",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "description": "Nobody engine: local PII detection, consistent pseudonymization and writing-style obfuscation. Runs fully on-device.",
   "license": "MIT",
   "type": "module",

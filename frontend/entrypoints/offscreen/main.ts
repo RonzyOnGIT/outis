@@ -4,6 +4,8 @@
  */
 import { configureOnnxWasm, LocalLlm, NobodyEngine, type DownloadProgress } from '@nobody/engine/runtime';
 import type { EngineRequest, EngineResponse } from '@/lib/messages';
+import { extractDocument } from '@/lib/documents/extract';
+import { base64ToBytes, DocumentError } from '@/lib/documents/types';
 // Bundled with the extension (see the alias in wxt.config.ts) — never loaded from a CDN.
 import ortWasmUrl from 'virtual-ort-wasm?url';
 
@@ -31,6 +33,9 @@ function progress(requestId: string | undefined, tabId: number | undefined) {
 
 async function handle(req: EngineRequest, tabId?: number): Promise<unknown> {
   switch (req.type) {
+    case 'document.extract':
+      try { return await extractDocument(base64ToBytes(req.base64), req.format); }
+      catch (e) { throw e instanceof DocumentError ? e : new DocumentError('unreadable'); }
     case 'ner.init':
       if (!(await engine.initNer(progress(req.requestId, tabId)))) throw new Error(engine.nerError ?? 'Name detector failed to load');
       return true;
@@ -71,7 +76,7 @@ browser.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
   if (msg?.target !== 'offscreen') return undefined;
   handle(msg as EngineRequest, sender.tab?.id).then(
     (data) => sendResponse({ ok: true, data } satisfies EngineResponse<unknown>),
-    (e: unknown) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) } satisfies EngineResponse<unknown>),
+    (e: unknown) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e), ...(e instanceof DocumentError ? { documentCode: e.code } : {}) } satisfies EngineResponse<unknown>),
   );
   return true;
 });

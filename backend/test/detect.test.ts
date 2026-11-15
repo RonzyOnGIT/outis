@@ -81,6 +81,14 @@ describe('pattern rules', () => {
 });
 
 describe('dictionary + resolution', () => {
+  it('keeps complete identifiers when an always-hide name matches only part of them', () => {
+    const text = 'Alice Example: alice@example.com and alice@example.com';
+    const candidates = [...detectRules(text), ...detectDictionary(text, [{ value: 'Alice Example', type: 'PERSON' }])];
+    const got = types(resolveSpans(text, candidates));
+    expect(got).toEqual(['PERSON:Alice Example', 'EMAIL:alice@example.com', 'EMAIL:alice@example.com']);
+    // Disabling the identifier category still permits explicit name hiding within it.
+    expect(types(resolveSpans(text, candidates, { policy: { EMAIL: false } }))).not.toContain('EMAIL:alice@example.com');
+  });
   it('matches always-hide terms including name parts', () => {
     const t = 'Alexey wrote this; Kazakov approved. alexey kazakov signed.';
     const got = types(detectDictionary(t, [{ value: 'Alexey Kazakov', type: 'PERSON' }]));

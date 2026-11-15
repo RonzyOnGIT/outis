@@ -122,6 +122,13 @@ export function resolveSpans(text: string, candidates: Span[], opts: DetectOptio
     if (insidePlaceholder(s)) return false;
     return s.end > s.start;
   });
-  const resolved = propagate(text, removeOverlaps(filtered));
+  // A name from Always hide (or a remembered name) can occur inside an address/token:
+  // Alice Example → alice@example.com. Keep the complete identifier instead of leaving pieces
+  // of it visible. Full dictionary matches still retain their normal priority.
+  const completeIdentifiers = filtered.filter((s) => s.source === 'rule' &&
+    ['EMAIL', 'URL', 'SECRET', 'CARD', 'IBAN', 'IP', 'PHONE', 'ID'].includes(s.type));
+  const whole = filtered.filter((s) => s.source !== 'dictionary' || !completeIdentifiers.some((r) =>
+    r.start <= s.start && r.end >= s.end && r.end - r.start > s.end - s.start));
+  const resolved = propagate(text, removeOverlaps(whole));
   return resolved.filter((s) => !never.has(s.text.trim().toLowerCase()) && !insidePlaceholder(s));
 }

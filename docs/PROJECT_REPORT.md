@@ -1,6 +1,12 @@
 # Nobody (repo: outis): project report
 
-*State as of 2026-11-15 · version 0.3.0 · branch `main`*
+*Document support update: 2026-11-14 · version 0.4.1 · branch `main`*
+
+The original report below describes the text workflow. Version 0.4 adds attachment interception
+before upload and reviewed, anonymized `.txt` copies from PDF, Office/OpenDocument, RTF and text
+formats. See [DOCUMENTS.md](DOCUMENTS.md) for the implementation, limits and verification coverage.
+The 0.4.1 build addresses on-page UI reported as hidden/zero-sized on Claude and Gemini and adds
+visible, bounded document-processing waits. The matching regression passes locally; recheck live sites.
 
 This report describes what is in the repository, how every part works, how to build and test it, what works today, and what is left to do. It is written so that someone new to the project can continue without any other context.
 
@@ -25,7 +31,8 @@ Nobody is a **Chrome/Edge browser extension** that protects you before you send 
 | Top status bar / review panel on real sites | **Unconfirmed**: diagnostics show the code shows the bar, but the user did not see it. v0.3.0 switched to CSP-proof styles; awaiting a `bar-visible` diagnostic (§9) |
 | Style neutralizer (Outis) | Integrated; tested with simulated models and with the real Qwen3.5-2B in the browser |
 | Gemini / Copilot / Perplexity / DeepSeek / Mistral | Untested on the real sites |
-| Files / screenshots | Not supported |
+| Document files | Local extraction and reviewed text-copy replacement; 14 formats; tested with a Chromium upload simulator |
+| Screenshots / OCR | Not supported; unreadable/scanned PDF pages are blocked |
 
 ---
 
@@ -354,7 +361,7 @@ Also check `chrome://extensions` → Nobody → **Errors** for warnings.
 4. **Rewrite quality/speed.** Fast 2B is quick but sometimes changes meaning; the neutralizer's checks fall back to rules. Recommend Balanced 4B for real use. Tune `EXAMPLES`, `FORMAL`, `ANCHOR_WORDS` in `neutralizer.ts` using `result.units[i].problems` (see the Outis README "Tuning").
 5. **Contribute fixes back** to the original `outis-neutralizer` folder: conditional check (if/unless/whether), stacked openers, trailing colon. (The fragment-loss bug existed only in the TS port and is fixed.)
 6. **Store readiness:** bundle WebLLM model libraries instead of fetching them from GitHub; Chrome Web Store listing; justify `<all_urls>`.
-7. **Not supported yet:** files and screenshots (PDF/DOCX/OCR), Firefox/Safari (no `offscreen` API; would need a background-page variant), non-English names (swap to a multilingual NER), encryption at rest for memory = device.
+7. **Not supported yet:** screenshots/OCR, layout-preserving document replacement, legacy DOC/XLS/PPT and cloud-drive attachments; Firefox/Safari (no `offscreen` API; would need a background-page variant), non-English names (swap to a multilingual NER), encryption at rest for memory = device. PDF/DOCX and other document text-copy support is now documented in [DOCUMENTS.md](DOCUMENTS.md).
 8. **Housekeeping:** the GitHub release `v0.1.0` zip is outdated (publish a new one or remove it); the old folders `~/Documents/Nobody/nobody-engine` and `nobody-extension` are obsolete copies.
 
 ---

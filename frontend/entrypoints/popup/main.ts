@@ -51,6 +51,9 @@ async function render() {
   const autoSwitch = h('input', { attrs: { type: 'checkbox', 'aria-label': 'Automatic mode' } });
   autoSwitch.checked = settings.autoMode;
   autoSwitch.addEventListener('change', () => void update({ autoMode: autoSwitch.checked }));
+  const documentSwitch = h('input', { attrs: { type: 'checkbox', 'aria-label': 'Protect document attachments' } });
+  documentSwitch.checked = settings.guardDocuments;
+  documentSwitch.addEventListener('change', () => void update({ guardDocuments: documentSwitch.checked }));
 
   const seg = h('div', { class: 'seg' });
   for (const [mode, label] of [['off', 'Off'], ['light', 'Light'], ['ai', 'AI']] as Array<[StyleMode, string]>) {
@@ -78,6 +81,7 @@ async function render() {
     ),
     h('div', { class: 'item' }, h('span', { text: 'Writing style on paste' }), seg),
     h('div', { class: 'item' }, h('span', { text: 'Check what I type' }), h('label', { class: 'switch' }, typingSwitch, h('span'))),
+    h('div', { class: 'item' }, h('div', {}, h('div', { text: 'Protect attachments' }), h('div', { class: 'muted small', text: 'Review cleaned text copies before upload' })), h('label', { class: 'switch' }, documentSwitch, h('span'))),
     h('div', { class: 'item' }, h('div', {}, h('div', { text: 'Automatic mode' }), h('div', { class: 'muted small', text: 'One Enter: fixed in the background' })), h('label', { class: 'switch' }, autoSwitch, h('span'))),
     h(
       'div',

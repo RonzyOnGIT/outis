@@ -408,6 +408,9 @@ function renderPasteDefaults() {
   const autoSendSwitch = mkSwitch('Send automatically', settings.autoSend, async (v) => {
     settings = await saveSettings({ autoSend: v });
   });
+  const documentSwitch = mkSwitch('Protect document attachments', settings.guardDocuments, async (v) => {
+    settings = await saveSettings({ guardDocuments: v });
+  });
 
   const typingSwitch = h('input', { attrs: { type: 'checkbox', 'aria-label': 'Check what I type' } });
   typingSwitch.checked = settings.guardTyping;
@@ -438,6 +441,10 @@ function renderPasteDefaults() {
   };
 
   pasteDefaultsBox.replaceChildren(
+    h('div', { class: 'setting' },
+      h('div', {}, h('strong', { text: 'Protect document attachments' }),
+        h('p', { class: 'muted small', text: 'Review cleaned TXT copies before upload, drop or file paste. Supports PDF, DOCX, XLSX, PPTX, ODT/ODS/ODP, RTF, TXT, Markdown, CSV, TSV, JSON and logs. Originals, images and unsupported formats are held back. Layout and embedded content are omitted. Up to 10 MB per file; 8 files / 25 MB per selection.' })),
+      documentSwitch),
     h(
       'div',
       { class: 'setting' },

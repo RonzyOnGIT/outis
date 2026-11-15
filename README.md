@@ -49,6 +49,30 @@ Open **ChatGPT, Claude, Gemini, Copilot, Perplexity, DeepSeek or Mistral**.
 **Shortcut:** `Alt + Shift + N` checks the text box you're in.
 **Toolbar icon:** turn Nobody on/off for a site, change the style, forget remembered names.
 
+## Document attachments (0.4)
+
+On enabled sites, select, drop or paste a document file. Nobody holds the original, reads it locally,
+replaces detected personal info using the same placeholders as your chat, and applies your selected
+writing style to prose. A private preview always opens, including in automatic mode.
+
+Choose **Attach cleaned copies**, **Download cleaned copies**, or **Cancel**. Attachments become
+UTF-8 `.txt` files with generic names, such as `attachment-1.txt`. Originals on disk are unchanged.
+Layout, images, charts, comments, macros and embedded objects are omitted. Tables, CSV, JSON and
+logs keep their structure and are not style-rewritten.
+
+Supported: **TXT, PDF, DOCX, XLSX, PPTX, ODT, ODS, ODP, RTF, Markdown, CSV, TSV, JSON and LOG**.
+Encrypted/damaged files, legacy DOC/XLS/PPT, images and unsupported files are blocked; PDF pages
+without extractable text require OCR first. A failed file blocks the whole selection.
+
+Limits: **10 MB/file**, **8 files / 25 MB/selection**, **200,000 extracted characters/selection**,
+**100 PDF pages/file**, **32 MB expanded Office content/file**. Review the warnings if name detection
+or AI rewriting is unavailable. Detection is best effort, so check the preview before attaching.
+
+Reload chat tabs after updating the extension. The guard covers standard file inputs, drag-and-drop
+and file-paste events; it cannot remove files already uploaded or intercept cloud-drive integrations
+and the File System Access picker. Some sites reject synthetic events or `.txt` files: check the site's
+attachment list and use the download option if needed. See [document support details](docs/DOCUMENTS.md).
+
 ## Privacy
 
 - Text is checked and rewritten **inside your browser**. The AI site only receives the cleaned version.
