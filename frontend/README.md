@@ -1,4 +1,4 @@
-# Nobody — browser extension (`frontend/`)
+# Outis — browser extension (`frontend/`)
 
 Hides names, emails, addresses, IDs, secrets **and your writing style** before you paste into ChatGPT, Claude, Gmail, GitHub and other sites. Everything runs locally in the browser; no text ever leaves the device.
 
@@ -22,7 +22,7 @@ Then paste text into chatgpt.com (or another AI chat: Claude, Gemini, Copilot, P
 **Typed text** is checked as you type, like a spell checker:
 - personal info gets a wavy underline (rich editors) and a "2 personal items · Review" badge appears by the box;
 - sending is held while personal info is in the box: plain Enter on AI chat sites, Ctrl/⌘+Enter anywhere, and Send / submit buttons. The review panel then offers **Replace with safe text** or **Keep my text**;
-- if you send right after typing, before the background check has run, Nobody holds the send, checks (~20–50 ms) and sends it again automatically when the text is clean.
+- if you send right after typing, before the background check has run, Outis holds the send, checks (~20–50 ms) and sends it again automatically when the text is clean.
 
 `Alt+Shift+N` checks the focused box on demand.
 
