@@ -1,0 +1,28 @@
+{
+  "name": "nobody-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Developer browser tests: load the built extension in Playwright Chromium against local chat-box simulators.",
+  "scripts": {
+    "bundles": "esbuild pm-src.js --bundle --format=iife --outfile=pm-bundle.js && esbuild tt-src.js --bundle --format=iife --outfile=tt-bundle.js",
+    "test:paste": "node e2e.mjs out",
+    "test:typing": "node typing.mjs out",
+    "test:prosemirror": "node pm.mjs out",
+    "test:tiptap": "BUNDLE=tt-bundle.js node pm.mjs out",
+    "test:auto": "node auto.mjs out",
+    "test:claude-like": "node claude-like.mjs out"
+  },
+  "devDependencies": {
+    "playwright": "1.65.1",
+    "esbuild": "^0.25.0",
+    "prosemirror-state": "^1.4.3",
+    "prosemirror-view": "^1.38.0",
+    "prosemirror-model": "^1.25.0",
+    "prosemirror-schema-basic": "^1.2.4",
+    "prosemirror-keymap": "^1.2.2",
+    "prosemirror-commands": "^1.7.0",
+    "@tiptap/core": "^3.0.0",
+    "@tiptap/starter-kit": "^3.0.0",
+    "@tiptap/extension-placeholder": "^3.0.0"
+  }
+}
