@@ -42,6 +42,19 @@ describe('pattern rules', () => {
     );
   });
 
+  it('treats any SSN/ITIN-shaped number as an ID, and IDs mentioned after a keyword', () => {
+    const t =
+      "HR asked for my SSN for the leave paperwork, it's 912-48-3365. Spaced: my social security is on file as 123 45 6789. " +
+      'The claim number they gave me on the phone was 88213004. My member ID is BCX-4471-0923.';
+    const got = types(detectRules(t));
+    expect(got).toEqual(expect.arrayContaining(['ID:912-48-3365', 'ID:123 45 6789', 'ID:88213004', 'ID:BCX-4471-0923']));
+  });
+
+  it('does not treat ordinary numbers near keywords as IDs', () => {
+    const t = 'My account was opened in 2019 and the policy covers 80% after a $2,340 deductible on 11/30.';
+    expect(detectRules(t).filter((s) => s.type === 'ID')).toEqual([]);
+  });
+
   it('finds street addresses and birth dates', () => {
     const t = 'I live at 742 Evergreen Terrace, Springfield, IL 62704. DOB: 03/14/1988.';
     const got = types(detectRules(t));
@@ -89,6 +102,16 @@ describe('dictionary + resolution', () => {
       { start: 18, end: 22, type: 'PERSON', text: 'Anna', source: 'ner', score: 0.9 },
     ];
     expect(types(resolveSpans(t, [...detectRules(t), ...cands]))).toEqual(['PERSON:Anna']);
+  });
+
+  it('ignores departments and acronyms that NER mistakes for organisations', () => {
+    const t = 'HR asked me to get an MRI at Lakeside Imaging';
+    const ner: Span[] = [
+      { start: 0, end: 2, type: 'ORG', text: 'HR', source: 'ner', score: 0.9 },
+      { start: 19, end: 22, type: 'ORG', text: 'MRI', source: 'ner', score: 0.8 },
+      { start: 26, end: 42, type: 'ORG', text: 'Lakeside Imaging', source: 'ner', score: 0.95 },
+    ];
+    expect(types(resolveSpans(t, ner))).toEqual(['ORG:Lakeside Imaging']);
   });
 
   it('respects category policy, allowlist and NER threshold', () => {

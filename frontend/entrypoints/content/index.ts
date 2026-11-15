@@ -22,7 +22,8 @@ import {
 } from '@/lib/settings';
 import { readField } from './fieldtext';
 import { captureContext, insertText, refocus, replaceAll, type InsertionContext } from './insert';
-import { ReviewPanel, toast } from './panel';
+import { ReviewPanel, toast, type PanelState } from './panel';
+import { progressFrom, TopBar } from './topbar';
 import { PageRestorer } from './restore';
 import { TypingGuard } from './typing';
 
@@ -38,6 +39,7 @@ export default defineContentScript({
     let settings: Settings = DEFAULT_SETTINGS;
     let vault = new Vault();
     let busy = false;
+    const bar = new TopBar();
 
     const enabledHere = () => isSiteEnabled(settings, site);
 
@@ -88,6 +90,26 @@ export default defineContentScript({
       }
     }
 
+    /** Top bar mirrors the panel: loading while rewriting, green when the safe text is ready. */
+    function showPanelState(s: PanelState, mode: 'paste' | 'field'): void {
+      const verb = mode === 'field' ? 'replace' : 'paste';
+      if (s.busy) {
+        const step = s.progressText || 'Starting the local AI model';
+        bar.show(
+          'loading',
+          s.queued ? `Rewriting… your text will be ${verb}d when ready` : 'Rewriting your message…',
+          s.queued ? `${step} · Esc to cancel` : step,
+          progressFrom(s.progressText),
+        );
+      } else if (s.warn) {
+        bar.show('warn', 'Ready — the AI kept the meaning only in parts', `Those parts use Light style. Press Enter to ${verb}.`);
+      } else if (s.ready) {
+        bar.show('ready', 'Ready — rewritten text is ready', `Press Enter to ${verb} it`);
+      } else {
+        bar.show('ready', 'Ready — safe text is ready', `Personal info hidden${s.style === 'light' ? ', style cleaned up' : ''}. Press Enter to ${verb}.`);
+      }
+    }
+
     /**
      * Show the review panel.
      *  paste mode — `text` came from the clipboard and gets inserted at the caret.
@@ -105,6 +127,7 @@ export default defineContentScript({
         if (opts.mode === 'field' && e.isTrusted && e.target instanceof Node && ctx.el.contains(e.target)) panel.dismiss();
       };
       window.addEventListener('input', onTyping, true);
+      bar.show('loading', 'Checking your message…', 'Looking for personal info on this device');
       const slow = setTimeout(() => panel.showLoading('Loading the name detector (first run only)…'), 1200);
       panel.showLoading('Checking for personal info…');
       try {
@@ -112,6 +135,7 @@ export default defineContentScript({
         clearTimeout(slow);
 
         if (!spans.length && settings.defaultStyle !== 'ai') {
+          bar.hide();
           panel.close();
           if (opts.mode === 'paste') await insertText(ctx, text);
           else refocus(ctx);
@@ -132,9 +156,12 @@ export default defineContentScript({
           nerUsed,
           mode: opts.mode,
           note: opts.note,
+          onState: (s: PanelState) => showPanelState(s, opts.mode),
           rewrite: async (anonymized, report) => {
             const requestId = newRequestId();
-            const off = onProgress(requestId, (p) => report(p.progress < 100 ? `Loading model… ${p.progress}%` : 'Rewriting…'));
+            const off = onProgress(requestId, (p) =>
+              report(p.text.startsWith('Rewriting') ? p.text : p.progress < 100 ? `Loading model… ${p.progress}%` : 'Rewriting'),
+            );
             try {
               return await engine.rewrite(anonymized, settings.webllmId!, requestId);
             } finally {
@@ -148,10 +175,22 @@ export default defineContentScript({
           // Remember placeholders (per the memory setting) so later messages and answers stay consistent.
           anonymize(text, result.spans, snapshot);
           await saveVault(site, snapshot.toJSON(), settings.memory);
-          if (opts.mode === 'field') await replaceAll(ctx, result.text);
+          let ok = true;
+          if (opts.mode === 'field') ok = await replaceAll(ctx, result.text);
           else await insertText(ctx, result.text);
+          if (ok) {
+            bar.show('ready', '✓ Done — safe text is in the box', opts.mode === 'field' ? 'Press Enter to send' : 'Review it and send when ready', undefined, 4000);
+          } else {
+            const copied = await navigator.clipboard.writeText(result.text).then(() => true, () => false);
+            bar.show(
+              'warn',
+              'Couldn’t replace the text automatically',
+              copied ? 'The safe text is on your clipboard: click the box, press ⌘A / Ctrl+A, then paste.' : 'Please try again, or use Alt+Shift+N.',
+            );
+          }
           return 'replaced';
         }
+        bar.hide();
         if (result.action === 'original') {
           if (opts.mode === 'paste') await insertText(ctx, text);
           else refocus(ctx);
@@ -161,6 +200,7 @@ export default defineContentScript({
         return 'cancelled';
       } catch (e) {
         clearTimeout(slow);
+        bar.hide();
         panel.close();
         console.error('[Nobody]', e);
         toast('Nobody hit an error — nothing was changed');

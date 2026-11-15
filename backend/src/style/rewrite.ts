@@ -51,7 +51,19 @@ export interface VerifyResult {
 }
 
 const FIRST_PERSON = /\b(?:I|[Mm]e|[Mm]y|[Mm]ine|[Mm]yself|[Ww]e|[Oo]ur|[Uu]s)\b/;
-const SECOND_PERSON = /\b(?:you|your|yours)\b/i;
+
+/** Long, meaningful words (fillers and function words removed), reduced to a 5-letter stem. */
+const STOP_WORDS = new Set(
+  ('honestly basically actually literally really totally seriously anyway anyhow though through should would could ' +
+    'because before around another something anything everything nothing please thanks almost already always without ' +
+    'within between there their these those which whether people things thing getting having being others itself ' +
+    'myself yourself further rather quite pretty little usually probably maybe hopefully definitely certainly simply')
+    .split(' '),
+);
+function keyStems(text: string): Set<string> {
+  const words = text.replace(/\[[A-Z]+_\d+\]/g, ' ').toLowerCase().match(/\p{L}{6,}/gu) ?? [];
+  return new Set(words.filter((w) => !STOP_WORDS.has(w)).map((w) => w.slice(0, 5)));
+}
 
 function numbers(text: string): string[] {
   return [...text.replace(/\[[A-Z]+_\d+\]/g, ' ').matchAll(/\d+(?:[.,:]\d+)*/g)].map((m) => m[0]).sort();
@@ -71,11 +83,20 @@ export function verifyRewrite(original: string, rewritten: string): VerifyResult
   if (missing.length) problems.push(`numbers changed: ${missing.join(', ')}`);
 
   const ratio = rewritten.length / Math.max(1, original.length);
-  if (original.length > 40 && (ratio < 0.4 || ratio > 2.5)) problems.push(`length changed too much (${ratio.toFixed(2)}×)`);
+  if (original.length > 40 && (ratio < 0.5 || ratio > 2.5)) problems.push(`length changed too much (${ratio.toFixed(2)}×)`);
+
+  // Content check: most key words (or their variants) must survive. Catches a model that drops
+  // a sentence or starts *answering* the text ("help me write a letter" → writes the letter).
+  const keys = keyStems(original);
+  if (keys.size >= 3) {
+    const kept = keyStems(rewritten);
+    const coverage = [...keys].filter((k) => kept.has(k)).length / keys.size;
+    if (coverage < 0.4) problems.push(`content dropped (${Math.round(coverage * 100)}% of key words kept)`);
+  }
 
   // Small models sometimes retell "I need…" as "[PERSON_1] needs…" — that changes who is speaking.
+  // ("Can you make it…" → "Please make it…" is fine, so we only guard the first person.)
   if (FIRST_PERSON.test(original) && !FIRST_PERSON.test(rewritten)) problems.push('changed point of view (I → they)');
-  if (SECOND_PERSON.test(original) && !SECOND_PERSON.test(rewritten)) problems.push('changed point of view (you → they)');
 
   // Anything that looks like personal data and was not already in the input was invented by the model.
   const leaked = detectRules(rewritten).filter((s) => !original.includes(s.text));
@@ -93,29 +114,64 @@ export interface RewriteResult {
 }
 
 /**
- * Rewrite prose parts of an already-anonymized text with a local LLM.
- * Code/logs are untouched. Each part is verified; on failure we retry once
- * more conservatively, then fall back to the Light (rule-based) style for that part.
+ * Split prose into parts of a few sentences. Small local models keep the meaning much better
+ * on short inputs, and a part that fails verification only falls back on its own.
  */
-export async function rewriteText(
-  anonymized: string,
-  generate: Generate,
-  opts: { extraCheck?: (original: string, candidate: string) => Promise<string[]> } = {},
-): Promise<RewriteResult> {
+export function splitIntoParts(text: string, maxChars = 360): string[] {
+  const sentences = text.match(/[^.!?\n]+(?:[.!?]+["')\]]*|\n+|$)\s*/g) ?? [text];
+  const parts: string[] = [];
+  let current = '';
+  for (const s of sentences) {
+    if (current && (current.length + s.length > maxChars || /\n\s*$/.test(current))) {
+      parts.push(current);
+      current = '';
+    }
+    current += s;
+  }
+  if (current) parts.push(current);
+  return parts;
+}
+
+export interface RewriteOptions {
+  extraCheck?: (original: string, candidate: string) => Promise<string[]>;
+  /** Called before each part: (index starting at 1, total parts). */
+  onPart?: (part: number, total: number) => void;
+}
+
+/**
+ * Rewrite prose parts of an already-anonymized text with a local LLM.
+ * Code/logs are untouched. Prose is rewritten a few sentences at a time; each part is verified,
+ * retried once more conservatively, and falls back to the Light (rule-based) style on failure.
+ */
+export async function rewriteText(anonymized: string, generate: Generate, opts: RewriteOptions = {}): Promise<RewriteResult> {
   const t0 = Date.now();
   const problems: string[] = [];
   let allRewritten = true;
-  const out: string[] = [];
 
+  // Plan all the work first so we can report "part 2 of 5".
+  type Piece = { text: string; rewrite: boolean };
+  const pieces: Piece[] = [];
   for (const seg of splitProtected(anonymized)) {
     if (seg.protected || !hasProse(seg.text)) {
-      out.push(seg.text);
+      pieces.push({ text: seg.text, rewrite: false });
       continue;
     }
-    const lead = /^\s*/.exec(seg.text)![0];
-    const trail = /\s*$/.exec(seg.text)![0];
-    const core = seg.text.trim();
-    const maxTokens = Math.min(2048, Math.ceil(core.length / 2.5) + 64);
+    for (const part of splitIntoParts(seg.text)) pieces.push({ text: part, rewrite: hasProse(part) });
+  }
+  const total = pieces.filter((p) => p.rewrite).length;
+
+  const out: string[] = [];
+  let done = 0;
+  for (const piece of pieces) {
+    if (!piece.rewrite) {
+      out.push(piece.text);
+      continue;
+    }
+    opts.onPart?.(++done, total);
+    const lead = /^\s*/.exec(piece.text)![0];
+    const trail = /\s*$/.exec(piece.text)![0];
+    const core = piece.text.trim();
+    const maxTokens = Math.min(1024, Math.ceil(core.length / 2.5) + 64);
 
     let accepted: string | null = null;
     for (const temperature of [0.5, 0.2]) {

@@ -23,11 +23,26 @@ export interface PanelInit {
   mode?: 'paste' | 'field';
   /** Shown under the title, e.g. why the panel opened. */
   note?: string;
+  /** Called whenever the panel's state changes (drives the top status bar). */
+  onState?: (s: PanelState) => void;
+}
+
+export interface PanelState {
+  /** AI rewrite still running. */
+  busy: boolean;
+  /** AI rewrite finished and passed the checks. */
+  ready: boolean;
+  /** AI rewrite fell back to Light in places. */
+  warn: boolean;
+  /** User pressed Enter while busy — the panel is hidden and will finish when ready. */
+  queued: boolean;
+  style: StyleMode;
+  progressText: string;
 }
 
 const LABELS = {
-  paste: { primary: 'Paste safely', secondary: 'Paste original', secondaryTip: 'Paste exactly what you copied' },
-  field: { primary: 'Replace with safe text', secondary: 'Keep my text', secondaryTip: 'Leave the box as it is' },
+  paste: { primary: 'Paste safely', later: 'Paste when rewritten', waiting: 'Will paste when ready…', secondary: 'Paste original', secondaryTip: 'Paste exactly what you copied' },
+  field: { primary: 'Replace with safe text', later: 'Replace when rewritten', waiting: 'Will replace when ready…', secondary: 'Keep my text', secondaryTip: 'Leave the box as it is' },
 };
 
 export type PanelResult =
@@ -111,6 +126,8 @@ export class ReviewPanel {
   private preview = '';
   private status: { text: string; warn?: boolean; busy?: boolean; ready?: boolean } = { text: '' };
   private rewriteStarted = 0;
+  /** User already pressed Enter while the AI rewrite was running — finish as soon as it's ready. */
+  private queued = false;
   private ticker: ReturnType<typeof setInterval> | undefined;
 
   constructor(private anchor: HTMLElement) {
@@ -200,7 +217,7 @@ export class ReviewPanel {
         this.preview = normalizeStyle(anon);
         const secs = this.rewriteStarted ? Math.round((Date.now() - this.rewriteStarted) / 1000) : 0;
         const what = this.progressText || `Rewriting with ${this.init.ai.modelName}`;
-        this.status = { text: `${what} · ${secs}s — you can replace now, or wait for the rewrite`, busy: true };
+        this.status = { text: `${what} · ${secs}s`, busy: true };
         if (this.rewriting !== anon) this.startRewrite(anon);
       }
     }
@@ -229,12 +246,25 @@ export class ReviewPanel {
           this.rewriting = null;
           clearInterval(this.ticker);
         }
-        if (this.resolve) this.render();
+        if (!this.resolve) return;
+        this.render();
+        if (this.queued && this.style === 'ai' && !this.status.busy) {
+          this.queued = false;
+          this.finishClean();
+        }
       });
   }
 
   private render(): void {
     this.compute();
+    this.init.onState?.({
+      busy: Boolean(this.status.busy),
+      ready: Boolean(this.status.ready),
+      warn: Boolean(this.status.warn),
+      queued: this.queued,
+      style: this.style,
+      progressText: this.progressText,
+    });
     const { original, spans, ai, nerUsed } = this.init;
     const hiddenCount = this.enabled.filter(Boolean).length;
     const busy = Boolean(this.status.busy);
@@ -298,6 +328,7 @@ export class ReviewPanel {
         on: {
           click: () => {
             this.style = mode;
+            this.queued = false;
             this.render();
           },
         },
@@ -306,11 +337,18 @@ export class ReviewPanel {
       seg.append(b);
     }
 
-    const primary = h('button', {
-      class: 'btn primary',
-      on: { click: () => this.pasteClean() },
-    }, busy ? `${labels.primary} now` : this.status.ready ? `${labels.primary} (rewritten)` : labels.primary, h('kbd', { text: '↵' }));
+    const primary = h(
+      'button',
+      { class: 'btn primary', on: { click: () => this.pasteClean() } },
+      busy ? (this.queued ? labels.waiting : labels.later) : this.status.ready ? `${labels.primary} (rewritten)` : labels.primary,
+      this.queued ? null : h('kbd', { text: '↵' }),
+    );
+    if (this.queued) primary.disabled = true;
     if (this.status.ready) primary.classList.add('pulse');
+    // While the rewrite runs, offer a way to skip it.
+    const skip = busy
+      ? h('button', { class: 'btn', text: 'Without rewrite', title: 'Use the Light version now', on: { click: () => this.finishClean() } })
+      : null;
 
     this.card.replaceChildren(
       h(
@@ -351,12 +389,25 @@ export class ReviewPanel {
         { class: 'foot' },
         h('button', { class: 'btn link', text: labels.secondary, title: labels.secondaryTip, on: { click: () => this.finish({ action: 'original' }) } }),
         h('button', { class: 'btn', text: 'Cancel', on: { click: () => this.finish({ action: 'cancel' }) } }),
+        skip,
         primary,
       ),
     );
   }
 
+  /** Enter / primary button: with AI rewrite still running, wait for it; otherwise finish now. */
   private pasteClean(): void {
+    if (this.style === 'ai' && this.status.busy) {
+      // Get out of the way: the top bar shows progress, and the text is replaced when ready.
+      this.queued = true;
+      this.card.style.display = 'none';
+      this.render();
+      return;
+    }
+    this.finishClean();
+  }
+
+  private finishClean(): void {
     this.finish({ action: 'clean', text: this.preview, spans: this.activeSpans() });
   }
 

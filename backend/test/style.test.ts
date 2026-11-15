@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanModelOutput, normalizeStyle, rewriteText, splitProtected, verifyRewrite, type Generate } from '../src/index.js';
+import { cleanModelOutput, normalizeStyle, rewriteText, splitIntoParts, splitProtected, verifyRewrite, type Generate } from '../src/index.js';
 
 describe('light style normalizer', () => {
   it('removes common stylometric tells', () => {
@@ -42,8 +42,30 @@ describe('rewrite verification', () => {
     expect(verifyRewrite(orig, 'I need [PERSON_2] to send the report. Could you help me?').ok).toBe(true);
   });
 
+  it('rejects rewrites that drop content or start answering the request', () => {
+    const orig = 'So, I need help writing an appeal letter to my insurance — they denied my claim again. Honestly, I am exhausted. My name is [PERSON_1].';
+    const answered = 'I am [PERSON_1] and I am writing about my claim.';
+    expect(verifyRewrite(orig, answered).ok).toBe(false);
+    const good = 'I need help writing an appeal letter to my insurance company, which has denied my claim again. I am very tired. My name is [PERSON_1].';
+    expect(verifyRewrite(orig, good)).toEqual({ ok: true, problems: [] });
+  });
+
+  it('allows "Can you…" to become "Please…"', () => {
+    expect(verifyRewrite('Can you make it firm but polite?', 'Please make it firm but polite.').ok).toBe(true);
+  });
+
   it('strips thinking blocks and chatty prefixes', () => {
     expect(cleanModelOutput('<think>hmm</think>\nHere is the rewritten text:\n"Hello there."')).toBe('Hello there.');
+  });
+});
+
+describe('splitIntoParts', () => {
+  it('groups sentences into short parts without losing any text', () => {
+    const text = 'One sentence here. Another one follows! A question? ' + 'Long sentence number four is a bit longer than the rest. '.repeat(8) + 'Last.';
+    const parts = splitIntoParts(text, 200);
+    expect(parts.join('')).toBe(text);
+    expect(parts.length).toBeGreaterThan(2);
+    for (const p of parts.slice(0, -1)) expect(p.length).toBeLessThanOrEqual(200 + 60);
   });
 });
 

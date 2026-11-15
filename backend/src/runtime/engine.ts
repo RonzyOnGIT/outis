@@ -58,6 +58,7 @@ export class NobodyEngine {
   async rewrite(anonymized: string, modelId: string, onProgress?: (p: DownloadProgress) => void): Promise<RewriteResult> {
     await this.llm.load(modelId, onProgress);
     return rewriteText(anonymized, this.llm.generate, {
+      onPart: (part, total) => onProgress?.({ progress: 100, text: total > 1 ? `Rewriting part ${part} of ${total}` : 'Rewriting' }),
       extraCheck: async (original, candidate) => {
         if (!this.ner) return [];
         const invented = (await this.ner.detect(candidate)).filter(

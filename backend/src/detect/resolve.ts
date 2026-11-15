@@ -97,6 +97,10 @@ export function propagate(text: string, spans: Span[]): Span[] {
   return removeOverlaps([...spans, ...extra]);
 }
 
+/** Departments, roles and common acronyms that NER models like to tag as organisations. */
+const GENERIC_TERMS =
+  /^(?:HR|IT|PR|QA|PM|R&D|CEO|CFO|CTO|COO|CMO|CIO|VP|SVP|EVP|MRI|CT|ER|ICU|ED|PTO|FMLA|FAQ|PDF|AI|ML|API|SQL|ASAP|ETA|FYI|TBD|OK|USA|US|UK|EU|DMV|IRS|ATM|GP|ENT|OB|IV|PT|OT)$/i;
+
 /**
  * Combine detections from every source into the final list of spans to hide:
  * apply the category policy and allowlist, resolve overlaps, propagate repeated mentions.
@@ -112,6 +116,7 @@ export function resolveSpans(text: string, candidates: Span[], opts: DetectOptio
 
   const filtered = candidates.filter((s) => {
     if (!policy[s.type]) return false;
+    if (s.source === 'ner' && GENERIC_TERMS.test(s.text.trim())) return false;
     if (s.source === 'ner' && s.score < threshold) return false;
     if (never.has(s.text.trim().toLowerCase())) return false;
     if (insidePlaceholder(s)) return false;

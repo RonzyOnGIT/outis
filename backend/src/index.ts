@@ -21,6 +21,8 @@ export { normalizeStyle } from './style/normalize.js';
 export { splitProtected, hasProse, type Segment } from './style/protect.js';
 export {
   rewriteText,
+  splitIntoParts,
+  type RewriteOptions,
   verifyRewrite,
   buildRewriteMessages,
   cleanModelOutput,

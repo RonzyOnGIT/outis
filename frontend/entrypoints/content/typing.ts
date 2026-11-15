@@ -45,6 +45,11 @@ export class TypingGuard {
   constructor(private deps: TypingGuardDeps) {
     window.addEventListener('input', (e) => this.onInput(e), true);
     window.addEventListener('focusin', (e) => this.onInput(e), true);
+    // Editors that insert text themselves (cancelling the native edit) never fire "input" —
+    // re-check after key presses too, so the underline and the Enter check stay up to date.
+    window.addEventListener('keyup', (e) => {
+      if (e.key !== 'Enter') this.onInput(e);
+    }, true);
     window.addEventListener('keydown', (e) => this.onKeyDown(e), true);
     window.addEventListener('click', (e) => this.onClick(e), true);
     window.addEventListener('scroll', () => this.placeBadge(), true);

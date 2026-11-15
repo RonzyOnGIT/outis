@@ -65,36 +65,88 @@ function setInputValue(el: HTMLInputElement | HTMLTextAreaElement, value: string
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+/** Wait until the browser has fired "selectionchange" and the editor has handled it. */
+function selectionSettled(): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      document.removeEventListener('selectionchange', finish);
+      setTimeout(resolve, 0);
+    };
+    document.addEventListener('selectionchange', finish);
+    setTimeout(finish, 80);
+  });
+}
+
+function selectAllDom(el: HTMLElement): void {
+  const all = document.createRange();
+  all.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(all);
+}
+
+/** Ask the editor itself to select everything (⌘A / Ctrl+A) — updates its internal selection too. */
+function editorSelectAll(el: HTMLElement): void {
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+  const init: KeyboardEventInit = { key: 'a', code: 'KeyA', bubbles: true, cancelable: true, metaKey: mac, ctrlKey: !mac };
+  const down = new KeyboardEvent('keydown', init);
+  Object.defineProperty(down, 'keyCode', { get: () => 65 });
+  Object.defineProperty(down, 'which', { get: () => 65 });
+  el.dispatchEvent(down);
+  // Plain contenteditable has no JS handler for it — select through the DOM as well.
+  if (!down.defaultPrevented) selectAllDom(el);
+}
+
+function pasteInto(el: HTMLElement, text: string): void {
+  const data = new DataTransfer();
+  data.setData('text/plain', text);
+  const event = new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true });
+  el.dispatchEvent(event);
+  if (!event.defaultPrevented) document.execCommand('insertText', false, text);
+}
+
 /**
- * Replace everything in the box with `text`.
+ * Replace everything in the box with `text`, and make sure nothing of the original is left.
  *
- * Selection and insertion happen synchronously in one task: rich editors (and chat apps that
- * move the cursor to the end on focus) get no chance to move the selection in between, so the
- * text can't end up appended after the original. The editor then reconciles the DOM change
- * itself. We verify the result and retry, so the original can never be sent along.
+ * Editors differ: some read the DOM selection, some insert at their own internal cursor, and chat
+ * apps may move that cursor to the end. So we try several ways, each of which replaces *all*
+ * content (a failed attempt can't leave anything behind), and verify after each one.
  */
 export async function replaceAll(original: InsertionContext, text: string): Promise<boolean> {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const strategies: Array<[string, (el: HTMLElement) => Promise<void>]> = [
+    ['dom-select+insert', async (el) => { selectAllDom(el); await selectionSettled(); selectAllDom(el); document.execCommand('insertText', false, text); }],
+    ['editor-selectall+insert', async (el) => { editorSelectAll(el); await selectionSettled(); document.execCommand('insertText', false, text); }],
+    ['editor-selectall+paste', async (el) => { editorSelectAll(el); await selectionSettled(); pasteInto(el, text); }],
+    ['dom-select+paste', async (el) => { selectAllDom(el); await selectionSettled(); pasteInto(el, text); }],
+  ];
+
+  for (let attempt = 0; attempt < strategies.length; attempt++) {
     const ctx = liveContext(original);
     if (!isFocused(ctx.el)) {
       ctx.el.focus();
       await sleep(30); // let the app's own focus handling finish first
     }
+    const [name, run] = strategies[attempt]!;
     if (ctx.kind === 'input') {
       ctx.el.setSelectionRange(0, ctx.el.value.length);
       if (!document.execCommand('insertText', false, text)) setInputValue(ctx.el, text);
     } else {
-      const all = document.createRange();
-      all.selectNodeContents(ctx.el);
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(all);
-      document.execCommand('insertText', false, text); // same task as the selection above
+      await run(ctx.el);
     }
-    await sleep(40);
-    if (squash(readText(liveContext(original))) === squash(text)) return true;
+    await sleep(60);
+    const now = readText(liveContext(original));
+    if (squash(now) === squash(text)) {
+      if (attempt > 0) console.info(`[Nobody] text replaced using "${name}" (attempt ${attempt + 1})`);
+      return true;
+    }
+    console.warn(`[Nobody] replace attempt "${name}" did not work: box has ${now.length} chars, expected ${text.length}`, {
+      editor: ctx.el.className, id: ctx.el.id, startsLike: squash(now).slice(0, 40),
+    });
   }
-  console.warn('[Nobody] could not replace the text box content');
+  console.error('[Nobody] could not replace the text box content — please report the warnings above');
   return false;
 }
 

@@ -85,7 +85,8 @@ const RECOGNIZERS: Recognizer[] = [
   },
 
   // --- Government / account IDs ---
-  { name: 'us-ssn', type: 'ID', pattern: /\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b/dg },
+  // SSN / ITIN shape. We don't reject "invalid" ranges (9xx = ITIN, etc.) — any such number is sensitive.
+  { name: 'us-ssn', type: 'ID', pattern: /(?<![\d-])\d{3}-\d{2}-\d{4}(?![\d-])/dg },
   {
     name: 'labelled-id',
     type: 'ID',
@@ -157,10 +158,37 @@ const RECOGNIZERS: Recognizer[] = [
   },
 ];
 
-/** Run every pattern recognizer over `text`. Overlaps are resolved later by `resolveSpans`. */
-export function detectRules(text: string): Span[] {
+const ID_CONTEXT =
+  /\b(?:ssn|social security|itin|tax id|tin|passport|licen[cs]e|member|policy|account|acct|patient|employee|student|customer|client|national id|id number|routing|iban|claim|case|reference|ref)\b/i;
+const SSN_CONTEXT = /\b(?:ssn|social security|itin|tax id|tin)\b/i;
+
+/**
+ * Second pass: numbers that are only identifiable because of what's written before them
+ * ("HR asked for my SSN for the leave paperwork, it's 912 48 3365"). Looks back up to 80 chars.
+ */
+const CONTEXTUAL: Recognizer[] = [
+  {
+    name: 'ssn-spaced-near-keyword',
+    type: 'ID',
+    pattern: /(?<!\d)(?<!\d )\d{3} \d{2} \d{4}(?! ?\d)/dg,
+    validate: (_v, text, start) => SSN_CONTEXT.test(text.slice(Math.max(0, start - 80), start)),
+  },
+  {
+    name: 'id-near-keyword',
+    type: 'ID',
+    pattern: /(?<![\w$.,/-])[A-Z0-9][A-Z0-9-]{4,24}(?![\w/-])/dgi,
+    validate: (v, text, start) => {
+      const digits = v.replace(/\D/g, '').length;
+      if (digits < 4 || /^\d{1,2}[-/]\d{1,2}$/.test(v)) return false;
+      if (/^(?:19|20)\d{2}$/.test(v)) return false; // a year
+      return ID_CONTEXT.test(text.slice(Math.max(0, start - 80), start));
+    },
+  },
+];
+
+function runRecognizers(text: string, recognizers: Recognizer[]): Span[] {
   const spans: Span[] = [];
-  for (const r of RECOGNIZERS) {
+  for (const r of recognizers) {
     r.pattern.lastIndex = 0;
     for (const m of text.matchAll(r.pattern)) {
       const g = r.group ?? 0;
@@ -173,4 +201,11 @@ export function detectRules(text: string): Span[] {
     }
   }
   return spans;
+}
+
+/** Run every pattern recognizer over `text`. Overlaps are resolved later by `resolveSpans`. */
+export function detectRules(text: string): Span[] {
+  const first = runRecognizers(text, RECOGNIZERS);
+  const second = runRecognizers(text, CONTEXTUAL).filter((s) => !first.some((f) => s.start < f.end && f.start < s.end));
+  return [...first, ...second];
 }
