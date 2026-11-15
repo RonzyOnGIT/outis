@@ -1,45 +1,68 @@
-# Outis · Nobody
+# Nobody
 
-> *Outis* (Οὖτις) — "Nobody", the name Odysseus gave the Cyclops.
+**Hide your personal info and your writing style before you send text to an AI chat.**
+Nobody replaces names, emails, phone numbers, addresses, IDs and API keys with placeholders like `[PERSON_1]`, and can rewrite your text so it doesn't sound like you. Everything runs **on your computer** — no server, no account, nothing is sent anywhere.
 
-**Nobody** is a browser extension that hides who you are before you send text to an AI chat:
+Works in **Chrome** and **Edge** on Windows, macOS and Linux.
 
-- **Personal info → consistent placeholders.** Names, companies, places, emails, phones, cards, IBANs, IDs, secrets/API keys and usernames in file paths become `[PERSON_1]`, `[EMAIL_1]` …, and the same person keeps the same placeholder across messages.
-- **Writing style → neutral.** Light mode cleans up punctuation, slang, typos and emoji instantly. AI mode rewrites the text with a local LLM so services can't fingerprint how you write.
-- **Pasted and typed text.** Pastes are reviewed before the site sees them. Typed text is underlined live, and sending is held until you review it.
-- **Answers stay readable.** Hover a placeholder in the AI's answer to see the real value. Only you see it.
-- **100% local.** Models run in the browser (WebAssembly + WebGPU). No server, no account, nothing leaves the device.
+---
 
-```
-outis/
-├── backend/    @nobody/engine — detection, placeholders, style rewrite, model catalog (TypeScript library)
-└── frontend/   Chrome/Edge extension (WXT, Manifest V3) — paste/typing guard, review panel, setup, popup
-```
+## Install (2 minutes)
 
-## Quick start
+1. **Download** [`nobody-extension-v0.1.0.zip`](https://github.com/RonzyOnGIT/outis/releases/latest/download/nobody-extension-v0.1.0.zip) and **unzip** it.
+2. Open **`chrome://extensions`** (Edge: **`edge://extensions`**) and turn on **Developer mode**.
+3. Click **Load unpacked** and select the unzipped **`nobody-extension`** folder.
+4. Pin it: click the puzzle icon 🧩 in the toolbar → 📌 next to **Nobody**.
+
+The **setup page** opens by itself.
+
+## Setup (first time only)
+
+1. Wait for the **name detector** to show **✓ Ready** (downloads 109 MB once).
+2. Pick a **writing-style model**. Nobody marks the best one for your computer:
+
+   | Model | Download | Good for |
+   |---|---|---|
+   | Light (no AI) | — | any computer, instant |
+   | Fast | 1.1 GB | office laptops |
+   | Balanced | 2.4 GB | most modern computers |
+   | Quality | 4.6 GB | gaming GPUs, Apple Silicon 16 GB+ |
+
+   Click the card → **Download & test**. It shows how fast it runs on your machine.
+3. *(Optional)* Add your own name and company under **Always hide**.
+4. Try the **playground** at the bottom, then click **Done**.
+
+## How to use
+
+Open **ChatGPT, Claude, Gemini, Copilot, Perplexity, DeepSeek or Mistral**.
+
+**Paste** text → a panel shows what was found and what the site will see.
+- **Enter** — paste the safe version · **Esc** — cancel
+- Click a highlighted word to keep it visible
+- **Writing style:** Off · Light (cleanup) · AI rewrite
+
+**Type** a message → personal info gets a wavy underline.
+- Press **Enter** to send → Nobody holds it and asks: **Replace with safe text** or **Keep my text**
+
+**Read the answer** → placeholders like `[PERSON_1]` are tinted. **Hover** to see the real name — only you can see it.
+
+**Shortcut:** `Alt + Shift + N` checks the text box you're in.
+**Toolbar icon:** turn Nobody on/off for a site, change the style, forget remembered names.
+
+## Privacy
+
+- Text is checked and rewritten **inside your browser**. The AI site only receives the cleaned version.
+- Models are downloaded once (from Hugging Face) and then work offline.
+- Real names are kept **in memory only until you close the browser** — or choose *Forget right after replacing* in settings.
+
+---
+
+## For developers
 
 ```bash
 npm install
-npm run build
+npm run build      # → frontend/dist/chrome-mv3
+npm test
 ```
 
-Load `frontend/dist/chrome-mv3` via `chrome://extensions` → Developer mode → **Load unpacked**. The setup page opens automatically.
-
-| Command | |
-|---|---|
-| `npm run build` | build engine + extension |
-| `npm run dev` | extension with hot reload |
-| `npm test` | engine unit tests |
-| `npm run test:ner` | real name-detector test in Node (downloads 109 MB) |
-| `npm run typecheck` | both packages |
-
-## Model size and installation
-
-| Concern | How it's handled now |
-|---|---|
-| Models use too much space | Light mode needs **no model**. Name detection is 109 MB. Rewrite models are optional, picked per device: 1.1 GB (Fast), 2.4 GB (Balanced), 4.6 GB (Quality). The extension itself is ~34 MB. The idle rewrite model is unloaded from GPU memory after 10 min, and *Remove* deletes it from disk. |
-| Users have to install models | No separate install: the setup page downloads models inside the browser with a progress bar, once, and caches them. No Python, no Ollama, no admin rights. |
-
-Ideas to go further: ship a smaller name model (DistilBERT ≈ 65 MB), default to Light and offer AI rewrite only on demand, or use Chrome's built-in Gemini Nano where available (zero download for us).
-
-Details: [backend/README.md](backend/README.md) · [frontend/README.md](frontend/README.md)
+`backend/` — detection, placeholders and rewrite engine ([details](backend/README.md)) · `frontend/` — the extension ([details](frontend/README.md))
