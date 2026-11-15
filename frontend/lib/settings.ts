@@ -29,6 +29,13 @@ export interface Settings {
   restoreMode: 'off' | 'hover' | 'replace';
   /** Check text while typing and stop sending while personal info is in the box. */
   guardTyping: boolean;
+  /**
+   * Automatic mode: on Enter/paste, take the text out of the box at once, make it safe in the
+   * background and put the safe version in when it's ready — no review panel, no second Enter.
+   */
+  autoMode: boolean;
+  /** In automatic mode, also send the message once the safe text is in the box. */
+  autoSend: boolean;
   memory: Memory;
 }
 
@@ -76,6 +83,8 @@ export const DEFAULT_SETTINGS: Settings = {
   minPasteChars: 12,
   restoreMode: 'hover',
   guardTyping: true,
+  autoMode: true,
+  autoSend: false,
   memory: 'session',
 };
 

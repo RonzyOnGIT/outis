@@ -14,7 +14,8 @@ export type Generate = (messages: ChatMessage[], opts: { temperature: number; ma
 const SYSTEM_PROMPT = `You are a privacy rewriter. Rewrite the user's text so that nobody can recognise the author from their writing style, while keeping exactly the same meaning.
 
 Rules:
-- Rephrase every sentence: use a different sentence structure, a different word order and different wording. Do not copy any phrase of four or more words from the original, except placeholders, product names, technical terms, numbers and quoted text.
+- Go through the text sentence by sentence, in the same order. Every sentence's meaning must appear in the rewrite: keep requests as requests, questions as questions and feelings as feelings.
+- Rephrase each sentence with a different structure and different wording. Avoid copying phrases of four or more words, except placeholders, product names, technical terms, numbers and quoted text.
 - Write in a plain, neutral, impersonal style, like a clear support ticket: standard grammar, medium-length sentences, no slang, emoji, exclamation marks, rhetorical questions, filler words or personal verbal habits.
 - Keep every fact, request, question, number, product name and technical term.
 - Keep every placeholder exactly as written, for example [PERSON_1] or [DATE_2]. Never add, remove, rename, merge or translate placeholders.
@@ -57,7 +58,7 @@ export function copiedRatio(original: string, rewritten: string): number {
 }
 
 /** Above this, a rewrite still "sounds like you" — ask the model once more. */
-const MAX_COPIED = 0.35;
+const MAX_COPIED = 0.5;
 
 /** Strip reasoning blocks and chatty wrappers small models like to add. */
 export function cleanModelOutput(raw: string): string {

@@ -139,14 +139,17 @@ export async function replaceAll(original: InsertionContext, text: string): Prom
       await run(ctx.el);
     }
     await sleep(60);
-    let now = readText(liveContext(original));
-    let ok = squash(now) === squash(text);
+    const now = readText(liveContext(original));
+    const ok = squash(now) === squash(text);
     if (ok) {
-      // Some apps re-render the box from their own saved draft a moment later — check again.
-      await sleep(400);
-      now = readText(liveContext(original));
-      ok = squash(now) === squash(text);
-      if (!ok) diag('replace-reverted', { method: name, boxChars: now.length, expectedChars: text.length });
+      // Some apps re-render the box from their own saved draft a moment later. Check again in the
+      // background (the user may press Enter right away) and put the safe text back if needed.
+      setTimeout(() => {
+        const later = readText(liveContext(original));
+        if (squash(later) === squash(text) || !squash(later)) return;
+        diag('replace-reverted', { method: name, boxChars: later.length, expectedChars: text.length });
+        if (squash(later).includes(squash(text).slice(0, 30)) || later.length > text.length) void replaceAll(original, text);
+      }, 400);
     }
     diag(ok ? 'replace-ok' : 'replace-failed', {
       method: name,
@@ -160,6 +163,37 @@ export async function replaceAll(original: InsertionContext, text: string): Prom
     if (ok) return true;
   }
   console.warn('[Nobody] could not replace the text box content — copy diagnostics from the Nobody popup');
+  return false;
+}
+
+/**
+ * Empty the box (used by automatic mode before the safe text is ready). Each method removes
+ * everything; we verify the box is really empty after each one.
+ */
+export async function clearBox(original: InsertionContext): Promise<boolean> {
+  const methods: Array<[string, (el: HTMLElement) => Promise<void>]> = [
+    ['dom-select+delete', async (el) => { selectAllDom(el); await selectionSettled(); selectAllDom(el); document.execCommand('delete'); }],
+    ['editor-selectall+delete', async (el) => { editorSelectAll(el); await selectionSettled(); document.execCommand('delete'); }],
+    ['dom-select+cut-text', async (el) => { selectAllDom(el); await selectionSettled(); document.execCommand('insertText', false, ''); }],
+  ];
+  for (let attempt = 0; attempt < methods.length; attempt++) {
+    const ctx = liveContext(original);
+    if (!isFocused(ctx.el)) {
+      ctx.el.focus();
+      await sleep(30);
+    }
+    const [name, run] = methods[attempt]!;
+    if (ctx.kind === 'input') {
+      ctx.el.setSelectionRange(0, ctx.el.value.length);
+      if (!document.execCommand('delete')) setInputValue(ctx.el, '');
+    } else {
+      await run(ctx.el);
+    }
+    await sleep(50);
+    const left = readText(liveContext(original)).trim();
+    diag(left ? 'clear-failed' : 'clear-ok', { method: name, attempt: attempt + 1, leftChars: left.length, editor: describeEditor(ctx.el) });
+    if (!left) return true;
+  }
   return false;
 }
 

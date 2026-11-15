@@ -385,6 +385,20 @@ function renderPasteDefaults() {
     renderPasteDefaults();
   });
 
+  const mkSwitch = (label: string, checked: boolean, onChange: (v: boolean) => void) => {
+    const input = h('input', { attrs: { type: 'checkbox', 'aria-label': label } });
+    input.checked = checked;
+    input.addEventListener('change', () => onChange(input.checked));
+    return h('label', { class: 'switch' }, input, h('span'));
+  };
+  const autoSwitch = mkSwitch('Automatic mode', settings.autoMode, async (v) => {
+    settings = await saveSettings({ autoMode: v });
+    renderPasteDefaults();
+  });
+  const autoSendSwitch = mkSwitch('Send automatically', settings.autoSend, async (v) => {
+    settings = await saveSettings({ autoSend: v });
+  });
+
   const typingSwitch = h('input', { attrs: { type: 'checkbox', 'aria-label': 'Check what I type' } });
   typingSwitch.checked = settings.guardTyping;
   typingSwitch.addEventListener('change', async () => {
@@ -414,6 +428,30 @@ function renderPasteDefaults() {
   };
 
   pasteDefaultsBox.replaceChildren(
+    h(
+      'div',
+      { class: 'setting' },
+      h(
+        'div',
+        {},
+        h('strong', { text: 'Automatic mode (one Enter)' }),
+        h('p', {
+          class: 'muted small',
+          text: settings.autoMode
+            ? 'Press Enter: your text leaves the box at once, and the safe, restyled version is put back when ready. Esc undoes. The badge still opens the full review.'
+            : 'Off: a review panel shows what will be hidden and asks before replacing.',
+        }),
+      ),
+      autoSwitch,
+    ),
+    settings.autoMode
+      ? h(
+          'div',
+          { class: 'setting' },
+          h('div', {}, h('strong', { text: 'Send automatically when ready' }), h('p', { class: 'muted small', text: 'Skip the final Enter. Off lets you glance at the safe text first.' })),
+          autoSendSwitch,
+        )
+      : '',
     h(
       'div',
       { class: 'setting' },

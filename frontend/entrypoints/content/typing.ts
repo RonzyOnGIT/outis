@@ -16,6 +16,8 @@ export interface TypingGuardDeps {
   enterSends(): boolean;
   isBusy(): boolean;
   analyze(text: string): Promise<Span[]>;
+  /** True if the text should be restyled before sending even without personal info. */
+  wantsRestyle(text: string): boolean;
   /** Instant, synchronous check (patterns + dictionary + names already seen). */
   quickCheck(text: string, knownNames: string[]): Span[];
   review(ctx: InsertionContext, text: string, spans: Span[], why: 'badge' | 'send'): Promise<'replaced' | 'kept' | 'cancelled'>;
@@ -56,6 +58,13 @@ export class TypingGuard {
     window.addEventListener('scroll', () => this.placeBadge(), true);
     window.addEventListener('resize', () => this.placeBadge());
     injectStyle();
+  }
+
+  /** Nobody just put this (already safe) text in the box — let the next Enter through instantly. */
+  noteClean(ctx: InsertionContext, text: string): void {
+    this.ctx = ctx;
+    this.last = { text, spans: [] };
+    this.paint([], null);
   }
 
   /** Clear all UI (e.g. when the site gets disabled). */
@@ -142,7 +151,8 @@ export class TypingGuard {
     if (!field.text.trim() || field.text === this.approved) return;
 
     const known = this.last && this.last.text === field.text ? this.last.spans : null;
-    if (known && known.length === 0) return; // checked and clean — let it go
+    const restyle = this.deps.wantsRestyle(field.text);
+    if (known && known.length === 0 && !restyle) return; // checked and clean — let it go
 
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -155,7 +165,7 @@ export class TypingGuard {
         const result = await Promise.race([this.analyzeNow(), sleep(SEND_CHECK_TIMEOUT_MS).then(() => null)]);
         spans = result?.text === field.text ? result.spans : this.deps.quickCheck(field.text, this.knownNames());
       }
-      if (!spans.length) {
+      if (!spans.length && !restyle) {
         resend();
         return;
       }
@@ -251,7 +261,7 @@ function isSendButton(button: HTMLElement, field: HTMLElement): boolean {
 }
 
 /** Re-send the original Enter keystroke after a clean check (our listener ignores untrusted events). */
-function resendKey(target: HTMLElement, original: KeyboardEvent): void {
+export function resendKey(target: HTMLElement, original: Pick<KeyboardEvent, 'ctrlKey' | 'metaKey' | 'altKey'>): void {
   target.focus();
   const ev = new KeyboardEvent('keydown', {
     key: 'Enter',

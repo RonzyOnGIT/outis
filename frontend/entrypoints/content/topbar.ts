@@ -29,6 +29,8 @@ const CSS =
 .fill { height: 100%; background: #fff; transition: width .3s ease; }
 .indeterminate .fill { width: 35% !important; animation: slide 1.1s ease-in-out infinite; }
 @keyframes slide { from { margin-left: -35%; } to { margin-left: 100%; } }
+.act { background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.45); color: #fff; border-radius: 8px; padding: 4px 10px; font: inherit; font-weight: 600; cursor: pointer; }
+.act:hover { background: rgba(255,255,255,.3); }
 .x { background: transparent; border: 0; color: #fff; opacity: .8; font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px; }
 .x:hover { opacity: 1; }
 `;
@@ -44,7 +46,7 @@ export class TopBar {
    * @param fraction 0..1 for a real progress bar, undefined for an animated "working" bar.
    * @param autoHideMs hide automatically after this long (used for "ready").
    */
-  show(state: BarState, title: string, sub?: string, fraction?: number, autoHideMs?: number): void {
+  show(state: BarState, title: string, sub?: string, fraction?: number, autoHideMs?: number, action?: { label: string; run: () => void }): void {
     clearTimeout(this.hideTimer);
     if (this.lastLogged !== state + title) {
       this.lastLogged = state + title;
@@ -63,6 +65,7 @@ export class TopBar {
         { class: 'row' },
         icon,
         h('div', { class: 'text' }, h('div', { class: 'title', text: title }), sub ? h('div', { class: 'sub', text: sub }) : null),
+        action ? h('button', { class: 'act', text: action.label, on: { click: () => { this.hide(); action.run(); } } }) : null,
         h('button', { class: 'x', text: '×', title: 'Hide', on: { click: () => this.hide() } }),
       ),
       state === 'loading' ? h('div', { class: `track${fraction === undefined ? ' indeterminate' : ''}` }, fill) : null,

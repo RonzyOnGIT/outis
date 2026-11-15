@@ -3,6 +3,7 @@ import {
   detectDictionary,
   detectRules,
   getRewriteModel,
+  normalizeStyle,
   resolveSpans,
   Vault,
   type DetectOptions,
@@ -21,14 +22,17 @@ import {
   type Settings,
 } from '@/lib/settings';
 import { readField } from './fieldtext';
-import { captureContext, insertText, refocus, replaceAll, type InsertionContext } from './insert';
+import { captureContext, clearBox, insertText, liveContext, refocus, replaceAll, type InsertionContext } from './insert';
 import { ReviewPanel, toast, type PanelState } from './panel';
 import { progressFrom, TopBar } from './topbar';
 import { describeEditor, diag } from '@/lib/diag';
 import { PageRestorer } from './restore';
-import { TypingGuard } from './typing';
+import { resendKey, TypingGuard } from './typing';
 
 type Outcome = 'replaced' | 'kept' | 'cancelled';
+
+/** Messages shorter than this (in words) get the Light cleanup instead of an AI rewrite. */
+const AI_MIN_WORDS = 12;
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -78,6 +82,8 @@ export default defineContentScript({
     let vault = new Vault();
     let busy = false;
     const bar = new TopBar();
+    /** The last safe text Nobody put into the box — sent as is on the next Enter. */
+    let lastPutIn = '';
 
     const enabledHere = () => alive() && isSiteEnabled(settings, site);
 
@@ -252,6 +258,150 @@ export default defineContentScript({
       }
     }
 
+    /**
+     * Automatic mode (one Enter): take the text out of the box right away, make it safe in the
+     * background, and put the safe version into the (now empty) box when it's ready.
+     *   field — text typed in the box (Enter / Send was pressed)
+     *   paste — text from the clipboard (nothing was inserted yet)
+     * Esc while working puts the original back (field) or cancels the paste.
+     */
+    async function autoFix(text: string, ctx: InsertionContext, mode: 'paste' | 'field', known?: Span[]): Promise<Outcome> {
+      busy = true;
+      let cancelled = false;
+      /** Enter pressed while working = "send it as soon as the safe text is in". */
+      let sendQueued = false;
+      const t0 = Date.now();
+      const working = mode === 'field' ? 'Your text is out of the box until the safe version is ready · Esc to undo' : 'It will be pasted when ready · Esc to cancel';
+      const onKey = (e: KeyboardEvent) => {
+        if (!e.isTrusted) return;
+        if (e.key === 'Escape' && !cancelled) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          cancelled = true;
+        } else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+          // Nothing safe to send yet — remember it and send once the safe text is in the box.
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          if (mode === 'field' && !sendQueued) {
+            sendQueued = true;
+            diag('auto-send-queued', {});
+            bar.show('loading', 'Making your message safe…', 'Will send as soon as it’s ready · Esc to undo');
+          }
+        }
+      };
+      window.addEventListener('keydown', onKey, true);
+      bar.show('loading', 'Making your message safe…', working);
+      diag('auto-start', { mode, chars: text.length, style: settings.defaultStyle, editor: describeEditor(ctx.el) });
+
+      const restoreOriginal = async () => {
+        if (mode === 'field') await replaceAll(ctx, text);
+        bar.show('ready', mode === 'field' ? 'Undone — your original text is back' : 'Paste cancelled', undefined, undefined, 2500);
+        diag('auto-cancelled', { mode });
+      };
+
+      try {
+        // 1. Get the original out of the box immediately, so it can't be sent by accident.
+        if (mode === 'field') await clearBox(ctx);
+
+        // 2. Find personal info (instant if the typing check already did it).
+        const spans = known ?? (await detect(text)).spans;
+        if (cancelled) return (await restoreOriginal(), 'cancelled');
+        if (!spans.length && (settings.defaultStyle === 'off' || (settings.defaultStyle === 'light' && normalizeStyle(text) === text))) {
+          // Nothing to hide or restyle: put it back as it was.
+          if (mode === 'field') await replaceAll(ctx, text);
+          else await insertText(ctx, text);
+          bar.show('ready', 'No personal info found', undefined, undefined, 2000);
+          return 'kept';
+        }
+
+        // 3. Make it safe: placeholders, then the chosen writing style.
+        const snapshot = vault;
+        const anon = anonymize(text, spans, snapshot.clone()).text;
+        let safe = settings.defaultStyle === 'off' ? anon : normalizeStyle(anon);
+        let partial = false;
+        const aiAvailable = settings.styleTier !== 'light' && Boolean(settings.webllmId);
+        // Short messages carry little style fingerprint, and small models are most likely to change
+        // their meaning — they get the Light cleanup instead of an AI rewrite.
+        const longEnough = (anon.match(/\p{L}+/gu) ?? []).length >= AI_MIN_WORDS;
+        if (settings.defaultStyle === 'ai' && aiAvailable && longEnough) {
+          const requestId = newRequestId();
+          const off = onProgress(requestId, (p) => {
+            if (cancelled) return;
+            const step = p.text.startsWith('Rewriting') ? p.text : p.progress < 100 ? `Loading the AI model… ${p.progress}%` : 'Rewriting';
+            const after = sendQueued ? 'Will send as soon as it’s ready · Esc to undo' : working;
+            bar.show('loading', 'Rewriting your message…', `${step} · ${after}`, progressFrom(step));
+          });
+          try {
+            const r = await engine.rewrite(anon, settings.webllmId!, requestId);
+            safe = r.text;
+            partial = !r.rewritten;
+          } catch (e) {
+            partial = true;
+            diag('auto-rewrite-error', { error: String(e).slice(0, 120) });
+          } finally {
+            off();
+          }
+        }
+        if (cancelled) return (await restoreOriginal(), 'cancelled');
+
+        // 4. Remember placeholders, then put the safe text in.
+        anonymize(text, spans, snapshot);
+        await saveVault(site, snapshot.toJSON(), settings.memory);
+        let ok = true;
+        let final = safe;
+        if (mode === 'field') {
+          // Keep anything the user typed meanwhile — unless it is the original (box couldn't be cleared).
+          const left = readField(liveContext(ctx)).text.trim();
+          const leftIsOriginal = left.length > 0 && text.includes(left.slice(0, Math.min(40, left.length)));
+          if (left && !leftIsOriginal) final = `${safe} ${left}`;
+          ok = await replaceAll(ctx, final);
+        } else {
+          await insertText(ctx, safe);
+        }
+        typing.noteClean(liveContext(ctx), final);
+        lastPutIn = readField(liveContext(ctx)).text;
+        diag('auto-done', { mode, ok, partial, ms: Date.now() - t0, chars: final.length });
+
+        if (!ok) {
+          const copied = await navigator.clipboard.writeText(final).then(() => true, () => false);
+          bar.show('warn', 'Couldn’t put the safe text in the box', copied ? 'It is on your clipboard: click the box, press ⌘A / Ctrl+A, then paste.' : 'Please try again.');
+          return 'replaced';
+        }
+        if ((settings.autoSend || sendQueued) && mode === 'field') {
+          bar.show('ready', '✓ Safe text ready — sending', partial ? 'Some parts use Light style' : undefined, undefined, 3000);
+          await new Promise((r) => setTimeout(r, 150));
+          resendKey(liveContext(ctx).el, { ctrlKey: false, metaKey: false, altKey: false });
+        } else {
+          bar.show(
+            partial ? 'warn' : 'ready',
+            partial ? 'Ready — the AI kept the meaning only in parts (those use Light style)' : '✓ Ready — safe text is in the box',
+            mode === 'field' ? 'Check it, then press Enter to send' : 'Check it before sending',
+            undefined,
+            6000,
+            mode === 'field'
+              ? {
+                  label: 'Undo',
+                  run: () => {
+                    diag('auto-undo', {});
+                    void replaceAll(ctx, text).then(() => typing.reset());
+                  },
+                }
+              : undefined,
+          );
+        }
+        return 'replaced';
+      } catch (e) {
+        console.error('[Nobody]', e);
+        diag('auto-error', { error: String(e).slice(0, 160) });
+        await restoreOriginal().catch(() => {});
+        bar.show('warn', 'Nobody hit an error — your original text is back', 'Nothing was sent.');
+        return 'cancelled';
+      } finally {
+        window.removeEventListener('keydown', onKey, true);
+        busy = false;
+      }
+    }
+
     // Load the AI rewrite model into memory as soon as the user clicks into a chat box,
     // so the rewrite is ready (or nearly) by the time they press Enter.
     let warmedAt = 0;
@@ -277,7 +427,8 @@ export default defineContentScript({
         if (text.trim().length < settings.minPasteChars) return;
         e.preventDefault();
         e.stopImmediatePropagation();
-        void review(text, ctx);
+        if (settings.autoMode) void autoFix(text, ctx, 'paste');
+        else void review(text, ctx);
       },
       true,
     );
@@ -290,12 +441,27 @@ export default defineContentScript({
       isBusy: () => busy,
       analyze: async (text) => (await detect(text, 5_000)).spans,
       quickCheck,
+      // In automatic mode every message is restyled before sending (that's the writing-style
+      // fingerprint), not only messages with personal info. Very short messages are left alone.
+      wantsRestyle: (text) => {
+        if (!settings.autoMode || settings.defaultStyle === 'off' || !text.trim()) return false;
+        if (lastPutIn && text.trim() === lastPutIn.trim()) return false; // Nobody's own output, send as is
+        if (settings.defaultStyle === 'light') return normalizeStyle(text) !== text;
+        // Short messages without personal info say little about how you write — send them untouched.
+        const words = (text.match(/\p{L}+/gu) ?? []).length;
+        if (words < AI_MIN_WORDS) return false;
+        const aiAvailable = settings.styleTier !== 'light' && Boolean(settings.webllmId);
+        return aiAvailable || normalizeStyle(text) !== text;
+      },
       review: (ctx, text, spans, why) =>
-        review(text, ctx, {
-          mode: 'field',
-          spans,
-          note: why === 'send' ? 'Not sent yet — this message contains personal info' : undefined,
-        }),
+        // Automatic mode handles Enter/Send in one step; the badge always opens the review panel.
+        why === 'send' && settings.autoMode
+          ? autoFix(text, ctx, 'field', spans)
+          : review(text, ctx, {
+              mode: 'field',
+              spans,
+              note: why === 'send' ? 'Not sent yet — this message contains personal info' : undefined,
+            }),
     });
 
     // --- 3. Keyboard shortcut (Alt+Shift+N): review whatever is in the focused box right now. ---
