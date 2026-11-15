@@ -22,8 +22,10 @@ export default defineConfig({
       'Hides names, emails, addresses, IDs and your writing style before you paste into AI chats, email or bug trackers. 100% local.',
     // scripting: put Nobody into tabs that were already open when it was installed/updated.
     permissions: ['storage', 'unlimitedStorage', 'offscreen', 'scripting'],
-    // Model weights are fetched once from Hugging Face; everything else is bundled.
-    host_permissions: ['https://huggingface.co/*', 'https://*.hf.co/*', 'https://raw.githubusercontent.com/*'],
+    // <all_urls>: lets the background inject into open tabs after an update and run edits through
+    // the page's own editor API (main world). The content script already runs on all sites, so the
+    // permission warning is unchanged. Model weights come from Hugging Face; everything else is bundled.
+    host_permissions: ['<all_urls>'],
     content_security_policy: {
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
     },

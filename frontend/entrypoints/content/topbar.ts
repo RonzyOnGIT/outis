@@ -1,4 +1,4 @@
-import { BASE_CSS, createShadowHost, h } from './ui';
+import { BASE_CSS, createShadowHost, h, reportVisibility } from './ui';
 import { diag } from '@/lib/diag';
 
 /**
@@ -41,6 +41,7 @@ export class TopBar {
   private hideTimer: ReturnType<typeof setTimeout> | undefined;
 
   private lastLogged = '';
+  private lastChecked = '';
 
   /**
    * @param fraction 0..1 for a real progress bar, undefined for an animated "working" bar.
@@ -74,6 +75,10 @@ export class TopBar {
     bar.addEventListener('mousedown', (e) => e.preventDefault());
     this.root!.querySelectorAll('.bar').forEach((b) => b.remove());
     this.root!.append(bar);
+    if (this.lastChecked !== state) {
+      this.lastChecked = state;
+      reportVisibility('bar', this.host!, bar);
+    }
     if (autoHideMs) this.hideTimer = setTimeout(() => this.hide(), autoHideMs);
   }
 

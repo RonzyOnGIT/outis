@@ -1,4 +1,5 @@
 import type { EntityType } from '@nobody/engine';
+import { describeEditor, diag } from '@/lib/diag';
 
 export { h } from '@/lib/dom';
 
@@ -61,3 +62,37 @@ export const BASE_CSS = `
 }
 button { font: inherit; cursor: pointer; }
 `;
+
+/**
+ * Diagnostics: is this UI element really on screen? Records whether it is still attached,
+ * its size/position, its styles, and which element is on top at its centre (covered?).
+ */
+export function reportVisibility(label: string, host: HTMLElement, el: HTMLElement): void {
+  const measure = (when: string) => {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const top = r.width && r.height ? document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 20)) : null;
+    let open: boolean | null = null;
+    try {
+      open = host.matches(':popover-open');
+    } catch {
+      open = null;
+    }
+    diag(`${label}-visible`, {
+      when,
+      attached: host.isConnected,
+      popoverOpen: open,
+      x: Math.round(r.left),
+      y: Math.round(r.top),
+      w: Math.round(r.width),
+      h: Math.round(r.height),
+      display: cs.display,
+      visibility: cs.visibility,
+      opacity: cs.opacity,
+      onTop: top === host ? 'nobody' : describeEditor(top),
+      viewport: `${innerWidth}x${innerHeight}`,
+    });
+  };
+  requestAnimationFrame(() => requestAnimationFrame(() => measure('shown')));
+  setTimeout(() => measure('after 1.5s'), 1500);
+}

@@ -40,6 +40,10 @@ export function captureContext(target: EventTarget | null = deepActiveElement())
  * Chat apps sometimes re-render their input box. If ours is gone from the page,
  * find the current one (same id, or whatever editable box has focus now).
  */
+export function readBox(ctx: InsertionContext): string {
+  return readText(liveContext(ctx));
+}
+
 export function liveContext(ctx: InsertionContext): InsertionContext {
   if (ctx.el.isConnected) return ctx;
   const byId = ctx.el.id ? document.getElementById(ctx.el.id) : null;
@@ -53,6 +57,42 @@ function isFocused(el: HTMLElement): boolean {
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Ask the background to edit the box through the page's own editor API (main world).
+ * Returns false if the page's editor has no API we know (then DOM methods are used).
+ */
+async function editorApi(ctx: InsertionContext, action: 'replace' | 'clear' | 'insert', text = ''): Promise<boolean> {
+  if (ctx.kind !== 'editable') return false;
+  const marker = Math.random().toString(36).slice(2, 10);
+  ctx.el.setAttribute('data-nobody-target', marker);
+  try {
+    type Res = { ok: boolean; why?: string; method?: string };
+    const res = await new Promise<Res>((resolve) => {
+      const port = browser.runtime.connect({ name: 'nobody-edit' });
+      const done = (r: Res) => {
+        clearTimeout(timer);
+        resolve(r);
+        try {
+          port.disconnect();
+        } catch {
+          /* already closed */
+        }
+      };
+      const timer = setTimeout(() => done({ ok: false, why: 'timeout' }), 3000);
+      port.onMessage.addListener((m: any) => done(m as Res));
+      port.onDisconnect.addListener(() => done({ ok: false, why: 'disconnected' }));
+      port.postMessage({ marker, action, text });
+    });
+    diag(res?.ok ? 'editor-api-ok' : 'editor-api-unavailable', { action, why: res?.why ?? null, method: res?.method ?? null });
+    return Boolean(res?.ok);
+  } catch (e) {
+    diag('editor-api-unavailable', { action, why: String(e).slice(0, 120) });
+    return false;
+  } finally {
+    ctx.el.removeAttribute('data-nobody-target');
+  }
+}
 const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
 
 function readText(ctx: InsertionContext): string {
@@ -118,6 +158,17 @@ function pasteInto(el: HTMLElement, text: string): void {
  * content (a failed attempt can't leave anything behind), and verify after each one.
  */
 export async function replaceAll(original: InsertionContext, text: string): Promise<boolean> {
+  // Best: the editor's own API (Tiptap / Claude). Can't append — it sets the whole document.
+  {
+    const ctx = liveContext(original);
+    if (await editorApi(ctx, 'replace', text)) {
+      await sleep(40);
+      const now = readText(liveContext(original));
+      const ok = squash(now) === squash(text);
+      diag(ok ? 'replace-ok' : 'replace-failed', { method: 'editor-api', boxChars: now.length, expectedChars: text.length, editor: describeEditor(ctx.el) });
+      if (ok) return true;
+    }
+  }
   const strategies: Array<[string, (el: HTMLElement) => Promise<void>]> = [
     ['dom-select+insert', async (el) => { selectAllDom(el); await selectionSettled(); selectAllDom(el); document.execCommand('insertText', false, text); }],
     ['editor-selectall+insert', async (el) => { editorSelectAll(el); await selectionSettled(); document.execCommand('insertText', false, text); }],
@@ -171,6 +222,12 @@ export async function replaceAll(original: InsertionContext, text: string): Prom
  * everything; we verify the box is really empty after each one.
  */
 export async function clearBox(original: InsertionContext): Promise<boolean> {
+  if (await editorApi(liveContext(original), 'clear')) {
+    await sleep(40);
+    const left = readText(liveContext(original)).trim();
+    diag(left ? 'clear-failed' : 'clear-ok', { method: 'editor-api', leftChars: left.length });
+    if (!left) return true;
+  }
   const methods: Array<[string, (el: HTMLElement) => Promise<void>]> = [
     ['dom-select+delete', async (el) => { selectAllDom(el); await selectionSettled(); selectAllDom(el); document.execCommand('delete'); }],
     ['editor-selectall+delete', async (el) => { editorSelectAll(el); await selectionSettled(); document.execCommand('delete'); }],
@@ -199,6 +256,12 @@ export async function clearBox(original: InsertionContext): Promise<boolean> {
 
 /** Insert `text` at the caret (used for pastes). */
 export async function insertText(original: InsertionContext, text: string): Promise<void> {
+  const before = readText(liveContext(original));
+  if (await editorApi(liveContext(original), 'insert', text)) {
+    await sleep(40);
+    if (squash(readText(liveContext(original))).includes(squash(text))) return;
+    diag('insert-api-unverified', { boxCharsBefore: before.length });
+  }
   const ctx = liveContext(original);
   const hadFocus = isFocused(ctx.el);
   if (!hadFocus) ctx.el.focus();

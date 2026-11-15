@@ -22,7 +22,7 @@ import {
   type Settings,
 } from '@/lib/settings';
 import { readField } from './fieldtext';
-import { captureContext, clearBox, insertText, liveContext, refocus, replaceAll, type InsertionContext } from './insert';
+import { captureContext, clearBox, insertText, liveContext, readBox, refocus, replaceAll, type InsertionContext } from './insert';
 import { ReviewPanel, toast, type PanelState } from './panel';
 import { progressFrom, TopBar } from './topbar';
 import { describeEditor, diag } from '@/lib/diag';
@@ -356,7 +356,19 @@ export default defineContentScript({
           if (left && !leftIsOriginal) final = `${safe} ${left}`;
           ok = await replaceAll(ctx, final);
         } else {
-          await insertText(ctx, safe);
+          // Some sites also insert the pasted text themselves (their own clipboard handling). If the
+          // original made it into the box, swap it for the safe text instead of adding next to it.
+          const sq = (s: string) => s.replace(/\s+/g, ' ').trim();
+          const box = sq(readBox(ctx));
+          const orig = sq(text);
+          const at = orig ? box.indexOf(orig.slice(0, Math.min(60, orig.length))) : -1;
+          diag('paste-box-before', { boxChars: box.length, originalInBox: at >= 0 });
+          if (at >= 0) {
+            final = `${box.slice(0, at)} ${safe} ${box.slice(at + orig.length)}`.trim();
+            ok = await replaceAll(ctx, final);
+          } else {
+            await insertText(ctx, safe);
+          }
         }
         typing.noteClean(liveContext(ctx), final);
         lastPutIn = readField(liveContext(ctx)).text;

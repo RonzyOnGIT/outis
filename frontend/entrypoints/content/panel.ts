@@ -8,7 +8,7 @@ import {
   type Vault,
 } from '@nobody/engine';
 import type { StyleMode } from '@/lib/settings';
-import { BASE_CSS, createShadowHost, h, typeGroup } from './ui';
+import { BASE_CSS, createShadowHost, h, reportVisibility, typeGroup } from './ui';
 
 export interface PanelInit {
   original: string;
@@ -155,6 +155,7 @@ export class ReviewPanel {
     this.enabled = init.spans.map(() => true);
     this.style = init.style === 'ai' && !init.ai.available ? 'light' : init.style;
     this.render();
+    reportVisibility('panel', this.host, this.card);
     return new Promise((r) => (this.resolve = r));
   }
 

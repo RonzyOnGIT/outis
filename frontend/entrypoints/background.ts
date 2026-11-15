@@ -51,12 +51,58 @@ export default defineBackground(() => {
     return undefined;
   });
 
+  // Editor edits through the page's own API. A dedicated port, so no other extension page can
+  // answer in its place (one-off messages go to every extension page).
+  browser.runtime.onConnect.addListener((port) => {
+    if (port.name !== 'nobody-edit') return;
+    port.onMessage.addListener((msg: any) => {
+      const tabId = port.sender?.tab?.id;
+      if (tabId == null) return port.postMessage({ ok: false, why: 'no tab' });
+      browser.scripting
+        .executeScript({
+          target: { tabId, frameIds: [port.sender?.frameId ?? 0] },
+          world: 'MAIN',
+          func: mainWorldEdit,
+          args: [msg.marker, msg.action, msg.text ?? ''],
+        })
+        .then(
+          (res) => port.postMessage(res?.[0]?.result ?? { ok: false, why: 'no result' }),
+          (e) => port.postMessage({ ok: false, why: String(e).slice(0, 200) }),
+        );
+    });
+  });
+
   browser.commands.onCommand.addListener((command, tab) => {
     if (command === 'scrub-field' && tab?.id != null) {
       browser.tabs.sendMessage(tab.id, { type: 'scrubField' }).catch(() => {});
     }
   });
 });
+
+/**
+ * Runs INSIDE the page (main world), where the chat app's own editor object lives. Rich editors
+ * keep their own document model; changing it through their API is the only way that can't
+ * end up appending. Supports Tiptap (Claude and many others): the editor is on `element.editor`.
+ * Must be self-contained — it is serialized and executed in the page.
+ */
+function mainWorldEdit(marker: string, action: 'replace' | 'clear' | 'insert', text: string) {
+  const el = document.querySelector(`[data-nobody-target="${marker}"]`) as (HTMLElement & { editor?: any }) | null;
+  if (!el) return { ok: false, why: 'element not found' };
+  let ed: any = null;
+  for (let n: any = el; n && !ed; n = n.parentElement) if (n.editor?.commands) ed = n.editor;
+  if (!ed) return { ok: false, why: 'no editor API' };
+  const lines = String(text).split('\n');
+  const paragraphs = lines.map((l) => ({ type: 'paragraph', content: l ? [{ type: 'text', text: l }] : [] }));
+  try {
+    if (action === 'replace') ed.commands.setContent({ type: 'doc', content: paragraphs }, { emitUpdate: true });
+    else if (action === 'clear') ed.commands.clearContent(true);
+    else if (text) ed.commands.insertContent(lines.length > 1 ? paragraphs : { type: 'text', text });
+    ed.commands.focus('end');
+    return { ok: true, method: 'tiptap', chars: String(ed.getText?.() ?? '').length };
+  } catch (e) {
+    return { ok: false, why: String(e).slice(0, 200) };
+  }
+}
 
 async function injectIntoOpenTabs(): Promise<void> {
   const files = (browser.runtime.getManifest().content_scripts ?? []).flatMap((c) => c.js ?? []);
