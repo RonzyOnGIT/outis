@@ -7,7 +7,7 @@ export interface Segment {
   protected: boolean;
 }
 
-const CODE_LINE =
+export const CODE_LINE =
   /^(?:\s{4,}|\t)|^\s*(?:at\s+\S+\s*\(|at\s+[\w$.<>]+:\d|File ".*", line \d+|Traceback \(most recent call last\)|\$ |> |#include|import |from \S+ import|def |class |function |const |let |var |public |private |return\b|[}\])];?\s*$)|^\s*[\w.$]+(?:Error|Exception)\b|^\s*\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}|[;{]\s*$/;
 
 export function splitProtected(text: string): Segment[] {

@@ -18,6 +18,16 @@ export {
   type PlaceholderMatch,
 } from './pseudonymize/anonymize.js';
 export { normalizeStyle } from './style/normalize.js';
+export { neutralizeLight, neutralizeWithModel, type NeutralOptions } from './style/neutral.js';
+export {
+  createNeutralizer,
+  neutralizeRules,
+  check as checkNeutralSentence,
+  surfaceSentence,
+  buildUnits,
+  type NeutralizeMode,
+  type NeutralizeResult,
+} from './style/neutralizer.js';
 export { splitProtected, hasProse, type Segment } from './style/protect.js';
 export {
   rewriteText,

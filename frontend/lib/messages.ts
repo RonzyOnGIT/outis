@@ -4,7 +4,7 @@ import type { DetectOptions, RewriteResult, Span } from '@nobody/engine';
 export type EngineRequest =
   | { type: 'ner.init'; requestId?: string }
   | { type: 'analyze'; text: string; options: DetectOptions }
-  | { type: 'rewrite'; text: string; modelId: string; requestId?: string }
+  | { type: 'rewrite'; text: string; modelId: string; requestId?: string; mode?: 'all' | 'auto' }
   | { type: 'llm.prepare'; modelId: string; requestId?: string }
   | { type: 'llm.load'; modelId: string }
   | { type: 'llm.status' }
@@ -69,8 +69,8 @@ class EngineError extends Error {}
 
 export const engine = {
   analyze: (text: string, options: DetectOptions) => callEngine<AnalyzeResponse>({ type: 'analyze', text, options }),
-  rewrite: (text: string, modelId: string, requestId?: string) =>
-    callEngine<RewriteResult>({ type: 'rewrite', text, modelId, requestId }),
+  rewrite: (text: string, modelId: string, requestId?: string, mode?: 'all' | 'auto') =>
+    callEngine<RewriteResult>({ type: 'rewrite', text, modelId, requestId, mode }),
   initNer: (requestId?: string) => callEngine<boolean>({ type: 'ner.init', requestId }),
   loadLlm: (modelId: string) => callEngine<null>({ type: 'llm.load', modelId }),
   prepare: (modelId: string, requestId?: string) => callEngine<PrepareResponse>({ type: 'llm.prepare', modelId, requestId }),

@@ -1,6 +1,8 @@
 import { detectRules } from '../detect/rules.js';
 import { detectDictionary, resolveSpans } from '../detect/resolve.js';
-import { rewriteText, type RewriteResult } from '../style/rewrite.js';
+import type { RewriteResult } from '../style/rewrite.js';
+import { neutralizeWithModel } from '../style/neutral.js';
+import type { NeutralizeMode } from '../style/neutralizer.js';
 import type { DetectOptions, Span } from '../types.js';
 import { LocalLlm } from './llm.js';
 import { NerDetector, type DownloadProgress, type NerConfig } from './ner.js';
@@ -54,17 +56,24 @@ export class NobodyEngine {
     return { spans, nerUsed, ms: Math.round(performance.now() - t0) };
   }
 
-  /** Rewrite an anonymized text with the given WebLLM model (loads it if needed). */
-  async rewrite(anonymized: string, modelId: string, onProgress?: (p: DownloadProgress) => void): Promise<RewriteResult> {
+  /**
+   * Neutralize the writing style of an anonymized text with the given WebLLM model (loads it if needed):
+   * the Outis neutralizer — plain everyday voice, checked sentence by sentence, rules fallback.
+   */
+  async rewrite(
+    anonymized: string,
+    modelId: string,
+    onProgress?: (p: DownloadProgress) => void,
+    opts: { mode?: NeutralizeMode } = {},
+  ): Promise<RewriteResult> {
     await this.llm.load(modelId, onProgress);
-    return rewriteText(anonymized, this.llm.generate, {
-      onPart: (part, total) => onProgress?.({ progress: 100, text: total > 1 ? `Rewriting part ${part} of ${total}` : 'Rewriting' }),
+    return neutralizeWithModel(anonymized, this.llm.generate, {
+      mode: opts.mode ?? 'all',
+      onProgress: (done, total) => onProgress?.({ progress: 100, text: `Rewriting · ${Math.min(done, total)} of ${total} sentences` }),
       extraCheck: async (original, candidate) => {
         if (!this.ner) return [];
-        const invented = (await this.ner.detect(candidate)).filter(
-          (s) => s.type === 'PERSON' && s.score >= 0.8 && !original.includes(s.text),
-        );
-        return invented.length ? [`model invented names: ${invented.map((s) => s.text).join(', ')}`] : [];
+        const invented = (await this.ner.detect(candidate)).filter((s) => s.type === 'PERSON' && s.score >= 0.8 && !original.includes(s.text));
+        return invented.length ? [`do not add names (${invented.map((s) => s.text).join(', ')})`] : [];
       },
     });
   }

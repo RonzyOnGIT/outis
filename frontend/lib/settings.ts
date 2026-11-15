@@ -36,6 +36,8 @@ export interface Settings {
   autoMode: boolean;
   /** In automatic mode, also send the message once the safe text is in the box. */
   autoSend: boolean;
+  /** AI rewrite: every sentence (most neutral) or only sentences the rules can't finish (faster). */
+  aiCoverage: 'all' | 'auto';
   memory: Memory;
 }
 
@@ -85,6 +87,7 @@ export const DEFAULT_SETTINGS: Settings = {
   guardTyping: true,
   autoMode: true,
   autoSend: false,
+  aiCoverage: 'all',
   memory: 'session',
 };
 

@@ -3,7 +3,7 @@ import {
   detectDictionary,
   detectRules,
   getRewriteModel,
-  normalizeStyle,
+  neutralizeLight,
   resolveSpans,
   Vault,
   type DetectOptions,
@@ -208,7 +208,7 @@ export default defineContentScript({
               report(p.text.startsWith('Rewriting') ? p.text : p.progress < 100 ? `Loading model… ${p.progress}%` : 'Rewriting'),
             );
             try {
-              return await engine.rewrite(anonymized, settings.webllmId!, requestId);
+              return await engine.rewrite(anonymized, settings.webllmId!, requestId, settings.aiCoverage);
             } finally {
               off();
             }
@@ -306,7 +306,7 @@ export default defineContentScript({
         // 2. Find personal info (instant if the typing check already did it).
         const spans = known ?? (await detect(text)).spans;
         if (cancelled) return (await restoreOriginal(), 'cancelled');
-        if (!spans.length && (settings.defaultStyle === 'off' || (settings.defaultStyle === 'light' && normalizeStyle(text) === text))) {
+        if (!spans.length && (settings.defaultStyle === 'off' || (settings.defaultStyle === 'light' && neutralizeLight(text) === text))) {
           // Nothing to hide or restyle: put it back as it was.
           if (mode === 'field') await replaceAll(ctx, text);
           else await insertText(ctx, text);
@@ -317,13 +317,13 @@ export default defineContentScript({
         // 3. Make it safe: placeholders, then the chosen writing style.
         const snapshot = vault;
         const anon = anonymize(text, spans, snapshot.clone()).text;
-        let safe = settings.defaultStyle === 'off' ? anon : normalizeStyle(anon);
+        let safe = settings.defaultStyle === 'off' ? anon : neutralizeLight(anon);
         let partial = false;
         const aiAvailable = settings.styleTier !== 'light' && Boolean(settings.webllmId);
         // Short messages carry little style fingerprint, and small models are most likely to change
         // their meaning — they get the Light cleanup instead of an AI rewrite.
         const longEnough = (anon.match(/\p{L}+/gu) ?? []).length >= AI_MIN_WORDS;
-        if (settings.defaultStyle === 'ai' && aiAvailable && longEnough) {
+        if (settings.defaultStyle === 'ai' && aiAvailable && (longEnough || spans.length > 0)) {
           const requestId = newRequestId();
           const off = onProgress(requestId, (p) => {
             if (cancelled) return;
@@ -332,7 +332,7 @@ export default defineContentScript({
             bar.show('loading', 'Rewriting your message…', `${step} · ${after}`, progressFrom(step));
           });
           try {
-            const r = await engine.rewrite(anon, settings.webllmId!, requestId);
+            const r = await engine.rewrite(anon, settings.webllmId!, requestId, settings.aiCoverage);
             safe = r.text;
             partial = !r.rewritten;
           } catch (e) {
@@ -458,12 +458,12 @@ export default defineContentScript({
       wantsRestyle: (text) => {
         if (!settings.autoMode || settings.defaultStyle === 'off' || !text.trim()) return false;
         if (lastPutIn && text.trim() === lastPutIn.trim()) return false; // Nobody's own output, send as is
-        if (settings.defaultStyle === 'light') return normalizeStyle(text) !== text;
+        if (settings.defaultStyle === 'light') return neutralizeLight(text) !== text;
         // Short messages without personal info say little about how you write — send them untouched.
         const words = (text.match(/\p{L}+/gu) ?? []).length;
         if (words < AI_MIN_WORDS) return false;
         const aiAvailable = settings.styleTier !== 'light' && Boolean(settings.webllmId);
-        return aiAvailable || normalizeStyle(text) !== text;
+        return aiAvailable || neutralizeLight(text) !== text;
       },
       review: (ctx, text, spans, why) =>
         // Automatic mode handles Enter/Send in one step; the badge always opens the review panel.

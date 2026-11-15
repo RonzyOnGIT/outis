@@ -92,8 +92,8 @@ export class TopBar {
 
 /** "Rewriting part 2 of 5" → 0.2..0.4 progress. */
 export function progressFrom(text: string): number | undefined {
-  const m = /part (\d+) of (\d+)/i.exec(text);
-  if (m) return (Number(m[1]) - 0.5) / Number(m[2]);
+  const m = /(\d+) of (\d+)/i.exec(text);
+  if (m) return Math.max(0.05, Number(m[1]) / Math.max(1, Number(m[2])));
   const pct = /(\d+)%/.exec(text);
   return pct ? Number(pct[1]) / 100 : undefined;
 }

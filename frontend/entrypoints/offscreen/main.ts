@@ -38,7 +38,7 @@ async function handle(req: EngineRequest, tabId?: number): Promise<unknown> {
       return engine.analyze(req.text, req.options);
     case 'rewrite': {
       touch();
-      const result = await engine.rewrite(req.text, req.modelId, progress(req.requestId, tabId));
+      const result = await engine.rewrite(req.text, req.modelId, progress(req.requestId, tabId), { mode: req.mode });
       touch();
       return result;
     }

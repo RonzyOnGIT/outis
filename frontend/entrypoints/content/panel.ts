@@ -2,7 +2,7 @@ import {
   anonymize,
   ENTITY_LABELS,
   findPlaceholders,
-  normalizeStyle,
+  neutralizeLight,
   type RewriteResult,
   type Span,
   type Vault,
@@ -204,8 +204,8 @@ export class ReviewPanel {
     if (this.style === 'off') {
       this.preview = anon;
     } else if (this.style === 'light') {
-      this.preview = normalizeStyle(anon);
-      this.status = { text: 'Light style: punctuation, slang, typos and emoji normalized.' };
+      this.preview = neutralizeLight(anon);
+      this.status = { text: 'Light: one plain voice — punctuation, fillers, slang, contractions and formal words normalized.' };
     } else {
       const cached = this.rewriteCache.get(anon);
       if (cached) {
@@ -215,7 +215,7 @@ export class ReviewPanel {
           : { text: 'AI rewrite changed the meaning in places — those parts use Light style instead.', warn: true };
       } else {
         // Don't make the user wait: show the Light version now, swap in the rewrite when it's ready.
-        this.preview = normalizeStyle(anon);
+        this.preview = neutralizeLight(anon);
         const secs = this.rewriteStarted ? Math.round((Date.now() - this.rewriteStarted) / 1000) : 0;
         const what = this.progressText || `Rewriting with ${this.init.ai.modelName}`;
         this.status = { text: `${what} · ${secs}s`, busy: true };
@@ -240,7 +240,7 @@ export class ReviewPanel {
         this.rewriteCache.set(anon, res);
       })
       .catch((e: unknown) => {
-        this.rewriteCache.set(anon, { text: normalizeStyle(anon), rewritten: false, problems: [String(e)], ms: 0 });
+        this.rewriteCache.set(anon, { text: neutralizeLight(anon), rewritten: false, problems: [String(e)], ms: 0 });
       })
       .finally(() => {
         if (this.rewriting === anon) {

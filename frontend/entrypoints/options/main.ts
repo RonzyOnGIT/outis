@@ -7,7 +7,7 @@ import {
   FIT_LABELS,
   NER_MODEL,
   findPlaceholders,
-  normalizeStyle,
+  neutralizeLight,
   probeDevice,
   rateModels,
   restore,
@@ -370,6 +370,16 @@ function renderPasteDefaults() {
     seg.append(b);
   }
 
+  const coverageSel = h('select');
+  for (const [v, label] of [['all', 'Every sentence (most neutral)'], ['auto', 'Only where needed (faster)']]) {
+    const o = h('option', { text: label, attrs: { value: v } });
+    if (settings.aiCoverage === v) o.selected = true;
+    coverageSel.append(o);
+  }
+  coverageSel.addEventListener('change', async () => {
+    settings = await saveSettings({ aiCoverage: coverageSel.value as Settings['aiCoverage'] });
+  });
+
   const restoreSel = h('select');
   for (const [v, label] of [
     ['hover', 'Hover to see real values (safest)'],
@@ -466,7 +476,13 @@ function renderPasteDefaults() {
       ),
       h('label', { class: 'switch' }, typingSwitch, h('span')),
     ),
-    h('div', { class: 'setting' }, h('div', {}, h('strong', { text: 'Default writing style' }), h('p', { class: 'muted small', text: 'You can still switch per paste in the review panel.' })), seg),
+    h('div', { class: 'setting' }, h('div', {}, h('strong', { text: 'Default writing style' }), h('p', { class: 'muted small', text: 'Light: rules only, instant. AI rewrite: plain everyday voice by the local model, checked sentence by sentence.' })), seg),
+    h(
+      'div',
+      { class: 'setting' },
+      h('div', {}, h('strong', { text: 'AI rewrite covers' }), h('p', { class: 'muted small', text: 'Every sentence is the most neutral. “Only where needed” sends just the sentences the rules can’t finish — much faster.' })),
+      coverageSel,
+    ),
     h(
       'div',
       { class: 'setting' },
@@ -595,14 +611,14 @@ function playground() {
     await saveVault('playground', vault.toJSON(), settings.memory);
     lastVault = vault; // keep real values for the restore box in this page only
     status.textContent = `Found ${spans.length} item(s) in ${ms} ms.`;
-    if (style === 'light') out = normalizeStyle(out);
+    if (style === 'light') out = neutralizeLight(out);
     if (style === 'ai' && settings.webllmId) {
-      renderWithPlaceholders(output, normalizeStyle(out));
+      renderWithPlaceholders(output, neutralizeLight(out));
       const requestId = newRequestId();
       const off = onProgress(requestId, (p) => (status.textContent = p.progress < 100 ? `Loading model… ${p.progress}%` : 'Rewriting…'));
       status.textContent = 'Rewriting locally…';
       try {
-        const r = await engine.rewrite(out, settings.webllmId, requestId);
+        const r = await engine.rewrite(out, settings.webllmId, requestId, settings.aiCoverage);
         out = r.text;
         status.textContent = r.rewritten
           ? `Found ${spans.length} item(s) · rewritten in ${(r.ms / 1000).toFixed(1)} s`

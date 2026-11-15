@@ -29,9 +29,17 @@ export function createShadowHost(id: string, css: string): { host: HTMLElement; 
   host.id = id;
   host.style.cssText = 'all: initial; position: fixed; z-index: 2147483647; inset: auto;';
   const root = host.attachShadow({ mode: 'closed' });
-  const style = document.createElement('style');
-  style.textContent = css;
-  root.append(style);
+  // Constructed stylesheet: not subject to the page's Content-Security-Policy (a <style> tag can be
+  // blocked by sites without 'unsafe-inline'). Falls back to <style> where unsupported.
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(css);
+    root.adoptedStyleSheets = [sheet];
+  } catch {
+    const style = document.createElement('style');
+    style.textContent = css;
+    root.append(style);
+  }
   document.documentElement.append(host);
   // Put it in the browser's top layer (Popover API): drawn above everything on the page, whatever
   // the site's own z-index, overflow or modal dialogs do. Falls back to a max z-index.
