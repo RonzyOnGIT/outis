@@ -3,6 +3,9 @@
 Version 0.4 adds a local, text-copy attachment workflow. Existing text-paste, typing, review and
 hover-restore flows remain available.
 
+Version 0.5 uses [context checks](CONTEXT.md) for dates, public company/place references and
+remembered values. Personal dates are replaced while useful deadlines and invoice dates remain.
+
 Version 0.4.1 fixes invisible on-page UI: the shared shadow host has explicit viewport dimensions
 and protected visibility styles, including `content-visibility`. Attachment panels recover if a
 page removes them or closes their popover. Diagnostics include host geometry and file-processing

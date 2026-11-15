@@ -12,6 +12,14 @@ The local privacy engine behind Nobody. It runs in the browser (offscreen docume
 
 ## Entry points
 
+Date detection uses local context: DOB/birth dates, medical dates and credential expiry/issue dates
+are hidden; ordinary deadlines, invoice dates and general calendar references remain useful.
+Public company/place references such as “compare Google and Microsoft” or “weather in Paris”
+remain visible unless linked to a personal relationship such as an employer or home. Uncertain
+names remain protected. Table headers, JSON keys and form labels help distinguish adjacent dates.
+Remembered values and propagated mentions are checked in their current context. Explicit hide/keep
+lists and category switches retain precedence. See [context behavior and limits](../docs/CONTEXT.md).
+
 ```ts
 import { detectRules, resolveSpans, anonymize, restore, Vault, normalizeStyle } from '@nobody/engine'; // pure, tiny
 import { NobodyEngine, configureOnnxWasm } from '@nobody/engine/runtime'; // models (Transformers.js + WebLLM)

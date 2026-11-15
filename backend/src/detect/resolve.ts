@@ -1,4 +1,5 @@
 import { DEFAULT_POLICY, type DetectOptions, type DictionaryEntry, type EntityType, type Span, type SpanSource } from '../types.js';
+import { isPublicReference, isSensitiveDate, isUsefulQuantity } from './context.js';
 
 export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -29,6 +30,22 @@ export function detectDictionary(text: string, entries: DictionaryEntry[] = []):
     }
   }
   return spans;
+}
+
+/** Remembered values are suggestions, not the user's explicit Always hide overrides. */
+export function detectKnownValues(text: string, entries: DictionaryEntry[] = []): Span[] {
+  return detectDictionary(text, entries).map((s) => ({ ...s, source: 'propagated' }));
+}
+
+function sensitiveInContext(text: string, span: Span): boolean {
+  if (span.source === 'dictionary') return true;
+  if (span.type === 'DATE') return isSensitiveDate(text, span.start, span.end);
+  // A remembered bare account number can later be an unrelated balance/quantity.
+  // Structured identifiers (SSNs, tokens, etc.) retain their existing protection.
+  if (span.type === 'ID' && span.source === 'propagated' && /^\d+$/.test(span.text)) {
+    return !isUsefulQuantity(text, span.start, span.end);
+  }
+  return !isPublicReference(text, span);
 }
 
 const SOURCE_RANK: Record<SpanSource, number> = { dictionary: 40, rule: 30, ner: 20, propagated: 10 };
@@ -120,6 +137,7 @@ export function resolveSpans(text: string, candidates: Span[], opts: DetectOptio
     if (s.source === 'ner' && s.score < threshold) return false;
     if (never.has(s.text.trim().toLowerCase())) return false;
     if (insidePlaceholder(s)) return false;
+    if (!sensitiveInContext(text, s)) return false;
     return s.end > s.start;
   });
   // A name from Always hide (or a remembered name) can occur inside an address/token:
@@ -130,5 +148,5 @@ export function resolveSpans(text: string, candidates: Span[], opts: DetectOptio
   const whole = filtered.filter((s) => s.source !== 'dictionary' || !completeIdentifiers.some((r) =>
     r.start <= s.start && r.end >= s.end && r.end - r.start > s.end - s.start));
   const resolved = propagate(text, removeOverlaps(whole));
-  return resolved.filter((s) => !never.has(s.text.trim().toLowerCase()) && !insidePlaceholder(s));
+  return resolved.filter((s) => !never.has(s.text.trim().toLowerCase()) && !insidePlaceholder(s) && sensitiveInContext(text, s));
 }

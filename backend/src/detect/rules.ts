@@ -1,5 +1,7 @@
 import type { EntityType, Span } from '../types.js';
 import { digitsOnly, ibanValid, luhnValid, shannonEntropy } from './validators.js';
+import { hasIdentifierContext, isSensitiveDate } from './context.js';
+import { dateCandidates } from './dates.js';
 
 /**
  * Pattern recognizers, modelled on Microsoft Presidio's approach:
@@ -25,9 +27,6 @@ function hasContext(text: string, start: number, words: RegExp): boolean {
 }
 
 const PHONE_CONTEXT = /(phone|tel|call|mobile|cell|whats\s?app|signal|telegram|fax|contact|text me|reach me|номер|телефон)\W*$/i;
-
-const MONTHS =
-  'January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec';
 
 const STREET_SUFFIX =
   '(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Way|Place|Pl|Terrace|Ter|Parkway|Pkwy|Circle|Cir|Highway|Hwy|Square|Sq|Trail|Trl)';
@@ -100,38 +99,6 @@ const RECOGNIZERS: Recognizer[] = [
   },
   { name: 'mac-address', type: 'ID', pattern: /\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b/dg },
 
-  // --- Dates of birth (plain dates are usually harmless) ---
-  {
-    name: 'birth-date',
-    type: 'DATE',
-    pattern:
-      /\b(?:dob|d\.o\.b\.|date of birth|born(?: on)?|birthday(?: is)?)\s*[:-]?\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}-\d{2}-\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(?:st|nd|rd|th)?,? \d{4}|\d{1,2}(?:st|nd|rd|th)? (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]* \d{4})/dgi,
-    group: 1,
-  },
-
-  // --- Any explicit calendar date (they pin down events: "MRI on September 22") ---
-  {
-    name: 'calendar-date',
-    type: 'DATE',
-    pattern: new RegExp(
-      String.raw`\b(?:` +
-        // September 22, Sept. 22nd 2025, Nov 30
-        String.raw`(?:${MONTHS})\.? \d{1,2}(?:st|nd|rd|th)?(?:,? \d{4})?` +
-        // 22 September 2025, 30th of November
-        String.raw`|\d{1,2}(?:st|nd|rd|th)?(?: of)? (?:${MONTHS})(?:,? \d{4})?` +
-        // 03/14/1991, 14.03.1991, 2025-09-22
-        String.raw`|\d{1,2}[/.]\d{1,2}[/.](?:\d{4}|\d{2})|\d{4}-\d{2}-\d{2}` +
-        String.raw`)(?![\w/.-]\d)`,
-      'dgi',
-    ),
-    validate: (v) => {
-      const m = /^(\d{1,2})[/.](\d{1,2})[/.]/.exec(v);
-      if (!m) return true;
-      const [a, b] = [Number(m[1]), Number(m[2])];
-      return a >= 1 && b >= 1 && (a <= 12 || b <= 12) && a <= 31 && b <= 31; // looks like a real day/month
-    },
-  },
-
   // --- Network ---
   {
     name: 'ipv4',
@@ -184,8 +151,6 @@ const RECOGNIZERS: Recognizer[] = [
   },
 ];
 
-const ID_CONTEXT =
-  /\b(?:ssn|social security|itin|tax id|tin|passport|licen[cs]e|member|policy|account|acct|patient|employee|student|customer|client|national id|id number|routing|iban|claim|case|reference|ref)\b/i;
 const SSN_CONTEXT = /\b(?:ssn|social security|itin|tax id|tin)\b/i;
 
 /**
@@ -203,11 +168,11 @@ const CONTEXTUAL: Recognizer[] = [
     name: 'id-near-keyword',
     type: 'ID',
     pattern: /(?<![\w$.,/-])[A-Z0-9][A-Z0-9-]{4,24}(?![\w/-])/dgi,
-    validate: (v, text, start) => {
+    validate: (v, text, start, end) => {
       const digits = v.replace(/\D/g, '').length;
       if (digits < 4 || /^\d{1,2}[-/]\d{1,2}$/.test(v)) return false;
       if (/^(?:19|20)\d{2}$/.test(v)) return false; // a year
-      return ID_CONTEXT.test(text.slice(Math.max(0, start - 80), start));
+      return hasIdentifierContext(text, start, end);
     },
   },
 ];
@@ -231,7 +196,9 @@ function runRecognizers(text: string, recognizers: Recognizer[]): Span[] {
 
 /** Run every pattern recognizer over `text`. Overlaps are resolved later by `resolveSpans`. */
 export function detectRules(text: string): Span[] {
-  const first = runRecognizers(text, RECOGNIZERS);
-  const second = runRecognizers(text, CONTEXTUAL).filter((s) => !first.some((f) => s.start < f.end && f.start < s.end));
+  const dates = dateCandidates(text);
+  const first = [...runRecognizers(text, RECOGNIZERS), ...dates.filter((s) => isSensitiveDate(text, s.start, s.end))];
+  // A useful calendar date near an account keyword must not come back as a contextual ID.
+  const second = runRecognizers(text, CONTEXTUAL).filter((s) => ![...first, ...dates].some((f) => s.start < f.end && f.start < s.end));
   return [...first, ...second];
 }

@@ -1,6 +1,6 @@
 {
   "name": "nobody-extension",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Nobody browser extension: hides personal info and your writing style before you paste into AI chats, email or bug trackers. Fully local.",
   "private": true,
   "license": "MIT",

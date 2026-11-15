@@ -68,10 +68,10 @@ describe('pattern rules', () => {
     expect(got).toEqual([]);
   });
 
-  it('hides explicit calendar dates but not weekdays or relative dates', () => {
+  it('hides personal dates while keeping useful deadlines and invoice dates', () => {
     const t = 'MRI on September 22 at noon, deadline Nov 30, 2026; born 03/14/1991; invoice 2025-09-22; on the 5th of March. See you Friday or tomorrow.';
     const got = types(resolveSpans(t, detectRules(t))).filter((x) => x.startsWith('DATE'));
-    expect(got).toEqual(['DATE:September 22', 'DATE:Nov 30, 2026', 'DATE:03/14/1991', 'DATE:2025-09-22', 'DATE:5th of March']);
+    expect(got).toEqual(['DATE:September 22', 'DATE:03/14/1991']);
   });
 
   it('accepts short phone numbers only with context', () => {

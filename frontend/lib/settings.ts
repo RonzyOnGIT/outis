@@ -67,7 +67,8 @@ export const DEFAULT_SITES = [
   'chat.mistral.ai',
 ];
 
-export const DEFAULT_NEVER_HIDE = [
+/** Stock list from builds <= 0.4.1. Those public terms now use the engine's context checks. */
+export const LEGACY_DEFAULT_NEVER_HIDE = [
   'ChatGPT', 'OpenAI', 'Claude', 'Anthropic', 'Gemini', 'Copilot', 'Google', 'Microsoft', 'Apple', 'Amazon',
   'GitHub', 'GitLab', 'Jira', 'Slack', 'Zoom', 'Teams', 'Excel', 'Word', 'PowerPoint', 'Outlook', 'Gmail',
   'Python', 'JavaScript', 'TypeScript', 'Java', 'React', 'Node', 'Linux', 'Windows', 'macOS', 'iOS', 'Android',
@@ -81,7 +82,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultStyle: 'light',
   policy: { ...DEFAULT_POLICY },
   alwaysHide: [],
-  neverHide: DEFAULT_NEVER_HIDE,
+  neverHide: [],
   sites: Object.fromEntries(DEFAULT_SITES.map((s) => [s, true])),
   allSites: false,
   minPasteChars: 12,
@@ -98,7 +99,16 @@ const KEY = 'settings';
 
 export async function loadSettings(): Promise<Settings> {
   const raw = (await browser.storage.local.get(KEY))[KEY] as Partial<Settings> | undefined;
-  return { ...DEFAULT_SETTINGS, ...raw, policy: { ...DEFAULT_SETTINGS.policy, ...raw?.policy } };
+  // Only migrate the untouched stock list; customized lists remain explicit user overrides.
+  const stock = new Set(LEGACY_DEFAULT_NEVER_HIDE.map((value) => value.toLowerCase()));
+  const legacyDefaults = raw?.neverHide?.length === stock.size &&
+    new Set(raw.neverHide.map((value) => value.trim().toLowerCase())).size === stock.size &&
+    raw.neverHide.every((value) => stock.has(value.trim().toLowerCase()));
+  return {
+    ...DEFAULT_SETTINGS, ...raw,
+    neverHide: legacyDefaults ? [] : raw?.neverHide ?? [],
+    policy: { ...DEFAULT_SETTINGS.policy, ...raw?.policy },
+  };
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<Settings> {

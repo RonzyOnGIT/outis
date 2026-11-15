@@ -333,6 +333,7 @@ function hideView() {
   return h(
     'div',
     { class: 'hide' },
+    h('p', { text: 'Context matters: birth dates, medical dates and credential expiry dates are hidden. Ordinary deadlines and public company or place references stay visible. Personal links such as your employer or home stay protected. Review the results; your lists below override these context checks.' }),
     h('div', { class: 'grid3' },
       h('label', {}, h('span', { class: 'lbl', text: 'Always hide — people' }), names),
       h('label', {}, h('span', { class: 'lbl', text: 'Always hide — other words' }), words),

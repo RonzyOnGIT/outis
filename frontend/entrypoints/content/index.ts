@@ -1,6 +1,7 @@
 import {
   anonymize,
   detectDictionary,
+  detectKnownValues,
   detectRules,
   getRewriteModel,
   neutralizeLight,
@@ -127,8 +128,8 @@ export default defineContentScript({
 
     /** Instant pattern + dictionary check that never leaves the content script. */
     function quickCheck(text: string, knownNames: string[] = []): Span[] {
-      const dictionary = [...settings.alwaysHide, ...knownNames.map((value) => ({ value, type: 'PERSON' as const }))];
-      return resolveSpans(text, [...detectRules(text), ...detectDictionary(text, dictionary)], detectOptions());
+      const known = knownNames.map((value) => ({ value, type: 'PERSON' as const }));
+      return resolveSpans(text, [...detectRules(text), ...detectDictionary(text, settings.alwaysHide), ...detectKnownValues(text, known)], detectOptions());
     }
 
     /** Name detection runs in the engine; if it is unavailable we still catch patterns locally. */

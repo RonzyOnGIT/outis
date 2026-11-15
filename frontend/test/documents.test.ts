@@ -45,6 +45,27 @@ describe('shared local document privacy pipeline', () => {
     expect(a.text).toBe('Email [EMAIL_1] and [EMAIL_2]');
     expect(b.text).toBe('[EMAIL_2]');
   });
+  it('uses field context for personal dates while preserving useful dates across attachments', async () => {
+    const vault = new Vault();
+    const first = await sanitizeDocument(document('DOB: 1991-03-14. Card expiry: 04/28. Deadline: 2026-11-30.'), vault, { style: 'off' }, services());
+    expect(first.text).toBe('DOB: [DATE_1]. Card expiry: [DATE_2]. Deadline: 2026-11-30.');
+    const second = await sanitizeDocument(document('Deadline: 1991-03-14. Coupon expires 04/28. DOB: 1991-03-14.'), vault, { style: 'off' }, services());
+    expect(second.text).toBe('Deadline: 1991-03-14. Coupon expires 04/28. DOB: [DATE_1].');
+  });
+  it('does not turn remembered public references into Always hide entries', async () => {
+    const vault = new Vault();
+    vault.assign('LOCATION', 'Paris');
+    vault.assign('ORG', 'Google');
+    const input = 'Weather in Paris. Compare Google. I live in Paris. My employer is Google.';
+    const result = await sanitizeDocument(document(input), vault, { style: 'off' }, services());
+    expect(result.text).toBe('Weather in Paris. Compare Google. I live in [LOCATION_1]. My employer is [ORG_1].');
+  });
+  it('retains explicit hide overrides even for useful document dates', async () => {
+    const result = await sanitizeDocument(document('Deadline: 2026-11-30'), new Vault(), {
+      style: 'off', alwaysHide: [{ value: '2026-11-30', type: 'DATE' }],
+    }, services());
+    expect(result.text).toBe('Deadline: [DATE_1]');
+  });
   it('keeps structured values and punctuation intact when AI style is selected', async () => {
     let calls = 0;
     const input = '{"email":"alice@example.com","amount":2.25,"note":"Honestly!!"}';

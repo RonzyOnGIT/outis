@@ -4,7 +4,7 @@
  */
 export * from './types.js';
 export { detectRules } from './detect/rules.js';
-export { detectDictionary, resolveSpans, removeOverlaps, propagate, findWord } from './detect/resolve.js';
+export { detectDictionary, detectKnownValues, resolveSpans, removeOverlaps, propagate, findWord } from './detect/resolve.js';
 export { groupPredictions, alignTokens, chunkText, type TokenPrediction } from './detect/ner-align.js';
 export { luhnValid, ibanValid } from './detect/validators.js';
 export { Vault, type VaultData, type VaultEntry } from './pseudonymize/vault.js';

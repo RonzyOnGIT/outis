@@ -1,4 +1,4 @@
-import { anonymize, detectDictionary, detectRules, neutralizeLight, resolveSpans, Vault, type DetectOptions, type Span } from '@nobody/engine';
+import { anonymize, detectDictionary, detectKnownValues, detectRules, neutralizeLight, resolveSpans, Vault, type DetectOptions, type Span } from '@nobody/engine';
 import { DOCUMENT_LIMITS, DocumentError, type DocumentBlock, type ExtractedDocument } from './types';
 
 export interface DocumentServices {
@@ -61,7 +61,7 @@ export async function sanitizeDocument(
   }
   // Apply newly discovered names to earlier blocks too; use all aliases already in the site's vault.
   const known = vault.list().flatMap((e) => e.aliases.map((value) => ({ value, type: e.type })));
-  const spans = resolveSpans(text, [...found, ...detectRules(text), ...detectDictionary(text, [...(options.alwaysHide ?? []), ...known])], options);
+  const spans = resolveSpans(text, [...found, ...detectRules(text), ...detectDictionary(text, options.alwaysHide), ...detectKnownValues(text, known)], options);
   const notes = new Set(document.notes);
   if (!nerUsed) notes.add('Name detection was unavailable for some text. Only patterns, your hide list and remembered values were checked. Review names carefully.');
   let partial = false;

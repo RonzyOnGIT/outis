@@ -1,6 +1,9 @@
 # Nobody (repo: outis): project report
 
-*Document support update: 2026-11-14 · version 0.4.1 · branch `main`*
+*Context update: version 0.5.0 · branch `feat/context-aware-privacy`*
+
+This branch adds context-sensitive date and public-reference handling for chat and document text.
+See [CONTEXT.md](CONTEXT.md) for behavior, override precedence, migration and verification.
 
 The original report below describes the text workflow. Version 0.4 adds attachment interception
 before upload and reviewed, anonymized `.txt` copies from PDF, Office/OpenDocument, RTF and text
@@ -152,7 +155,7 @@ Why **main world**: rich editors (ProseMirror/Tiptap) keep their own document mo
    - Contact: email, URL (URL hidden is **off** by default), phone (shape + context words; short numbers need context such as "phone:").
    - Financial: card numbers (Luhn), IBAN (mod-97).
    - IDs: any `NNN-NN-NNNN` (SSN/ITIN shape, including 9xx), labelled IDs ("member ID: …"), MAC addresses.
-   - Dates: birth dates after DOB/born, plus **any explicit calendar date** ("September 22", "Nov 30, 2026", "03/14/1991", "5th of March"); weekdays/"tomorrow" are not hidden.
+   - Dates: hide DOB/birth dates, medical dates and credential expiry/issue dates using nearby text, form labels, JSON keys and table columns. Keep ordinary deadlines, invoice dates and general calendar references; weekdays/"tomorrow" are not hidden.
    - Network: IPv4/IPv6. Usernames in file paths (`/Users/<name>/`, `C:\Users\<name>\`). Street addresses (US/UK/EU style).
    - **Second, contextual pass** (only where the first pass found nothing): numbers with ≥ 4 digits within 80 characters after keywords (SSN, member, policy, account, passport, claim, …), spaced SSNs after "SSN"/"social security".
 2. **Dictionary** (`detectDictionary`): the user's *Always hide* list (people + other words); person entries also match each name part.

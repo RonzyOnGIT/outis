@@ -177,7 +177,7 @@ try {
     return result.result.value;
   }
   const selection = (name, buffer) => page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer });
-  await page.locator('#files').setInputFiles([{ name: 'Alice Example.docx', mimeType: 'application/octet-stream', buffer: docx }, { name: 'alice@example.com.pdf', mimeType: 'application/pdf', buffer: pdf([EMAIL]) }]);
+  await page.locator('#files').setInputFiles([{ name: 'Alice Example.docx', mimeType: 'application/octet-stream', buffer: docx }, { name: 'alice@example.com.pdf', mimeType: 'application/pdf', buffer: pdf([`DOB: 1991-03-14; Deadline: 2026-11-30; Card expiry: 04/28. ${EMAIL}`]) }]);
   await ready();
   assert.equal(await panelVisible(), true, 'review must be visible despite page popover CSS');
   // Sites can remove injected nodes or close top-layer popovers during an upload re-render.
@@ -200,6 +200,8 @@ try {
     assert.ok(f.text.includes('[EMAIL_1]'), JSON.stringify(f)); assert.doesNotMatch(f.text, /Alice|alice@example|SECRET/);
   }
   assert.ok(first[0].text.includes('[PERSON_1]'));
+  assert.match(first[1].text, /DOB: \[DATE_1\]; Deadline: 2026-11-30; Card expiry: \[DATE_2\]/);
+  assert.doesNotMatch(first[1].text, /1991-03-14|04\/28/);
   const vaultBefore = await options.evaluate(async () => (await chrome.storage.session.get('vault:127.0.0.1'))['vault:127.0.0.1']);
   await selection('cancel.txt', Buffer.from('cancel@example.com'));
   await ready(); await page.keyboard.press('Escape');
@@ -217,11 +219,11 @@ try {
       const data = new DataTransfer(); data.items.add(new File([email], 'private.txt', { type: 'text/plain' }));
       const event = kind === 'drop' ? new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }) : new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data });
       document.getElementById('drop').dispatchEvent(event);
-    }, { kind, email: EMAIL });
+    }, { kind, email: `Deadline: 1991-03-14; ${EMAIL}` });
     await ready();
     const before = uploads.length;
     await click('Attach cleaned copies'); await until(() => uploads.length > before, kind);
-    assert.equal(uploads.at(-1).kind, kind); assert.equal(uploads.at(-1).files[0].text, '[EMAIL_1]');
+    assert.equal(uploads.at(-1).kind, kind); assert.equal(uploads.at(-1).files[0].text, 'Deadline: 1991-03-14; [EMAIL_1]');
   }
   await selection('stale.txt', Buffer.from(EMAIL)); await ready();
   await options.evaluate(async () => { const { settings } = await chrome.storage.local.get('settings'); await chrome.storage.local.set({ settings: { ...settings, defaultStyle: 'light' } }); });
@@ -242,7 +244,7 @@ try {
   assert.deepEqual(errors, []);
   assert.ok(diagnostics.includes('documents-review-ready'));
   assert.ok(diagnostics.includes('documents-extracted'));
-  console.log('PASS: visible/recoverable review under conflicting CSS, real mouse actions, original input events held, batch upload, shared placeholders, cancellation, all-or-nothing failure, drop, file paste, settings invalidation, download fallback, closed preview and private diagnostics');
+  console.log('PASS: visible/recoverable review under conflicting CSS, real mouse actions, original input events held, batch upload, contextual PDF dates and remembered values, shared placeholders, cancellation, all-or-nothing failure, drop, file paste, settings invalidation, download fallback, closed preview and private diagnostics');
 } finally {
   await context?.close();
   await new Promise(resolve => server.close(resolve));
