@@ -36,15 +36,15 @@ The **setup page** opens by itself.
 
 Open **ChatGPT, Claude, Gemini, Copilot, Perplexity, DeepSeek or Mistral**.
 
-**Paste** text → a panel shows what was found and what the site will see.
-- **Enter** — paste the safe version · **Esc** — cancel
-- Click a highlighted word to keep it visible
-- **Writing style:** Off · Light (cleanup) · AI rewrite
+**Paste** text → the *Before you send* panel lists what will be hidden and shows what the AI will see.
+- **Enter**: paste the disguised version · **Esc**: cancel
+- Untick a detail to keep it visible
+- **Writing voice:** Keep mine · Light · Full rewrite
 
-**Type** a message → personal info gets a wavy underline.
-- Press **Enter** to send → Outis holds it and asks: **Replace with safe text** or **Keep my text**
+**Type** a message → personal details get a dotted underline and a "3 to hide" chip.
+- Press **Enter** to send → Outis holds it and offers **Replace with disguised text**, **Keep editing** or **Allow as typed**
 
-**Read the answer** → placeholders like `[PERSON_1]` are tinted. **Hover** to see the real name — only you can see it.
+**Read the answer** → placeholders like `[PERSON_1]` are highlighted. **Hover** to see the real name; only you can see it.
 
 **Links** are treated as one piece: a link stays exactly as written, or — when it contains something
 personal (an email, a token, a name such as `linkedin.com/in/jane-doe`) — the whole link becomes `[URL_1]`.

@@ -20,8 +20,8 @@ The setup page opens automatically:
 Then paste text into chatgpt.com (or another AI chat: Claude, Gemini, Copilot, Perplexity, DeepSeek, Mistral — more sites can be added in settings). A review panel shows what was found, what the site will see, and lets you choose the writing style. `Enter` pastes the safe version, `Esc` cancels.
 
 **Typed text** is checked as you type, like a spell checker:
-- personal info gets a wavy underline (rich editors) and a "2 personal items · Review" badge appears by the box;
-- sending is held while personal info is in the box: plain Enter on AI chat sites, Ctrl/⌘+Enter anywhere, and Send / submit buttons. The review panel then offers **Replace with safe text** or **Keep my text**;
+- personal details get a dotted bronze underline (rich editors) and a "2 to hide" chip appears by the box;
+- sending is held while personal details are in the box: plain Enter on AI chat sites, Ctrl/⌘+Enter anywhere, and Send / submit buttons. The *Before you send* panel then offers **Replace with disguised text**, **Keep editing** or **Allow as typed**;
 - if you send right after typing, before the background check has run, Outis holds the send, checks (~20–50 ms) and sends it again automatically when the text is clean.
 
 `Alt+Shift+N` checks the focused box on demand.
